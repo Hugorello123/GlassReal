@@ -1,25 +1,37 @@
-// src/App.tsx
+import NewsTicker from "./NewsTicker";
 import Landing from "./landing";
-import Dashboard from "./dashboard";
-import AdminPage from "./src/pages/Admin";
+import Dashboard from "./dashboard";  // <-- changed
 import Login from "./login";
+import BusinessTicker from "./components/BusinessTicker";
 
-const App = () => {
-  const path = window.location.pathname;
+export default function App() {
+  const path = window.location.pathname.toLowerCase();
 
-  if (path === "/dashboard") {
-    return <Dashboard />;
+  // render by URL path
+  if (path.startsWith("/dashboard")) {
+    return (
+      <>
+        <NewsTicker />
+         <BusinessTicker /> 
+        <Dashboard />
+      </>
+    );
   }
 
-  if (path === "/login") {
-    return <Login />;
+  if (path.startsWith("/login")) {
+    return (
+      <>
+        <NewsTicker />
+        <Login />
+      </>
+    );
   }
 
-  if (path === "/admin") {
-    return <AdminPage />;
-  }
-
-  return <Landing />;
-};
-
-export default App;
+  // default: landing
+  return (
+    <>
+      <NewsTicker />
+      <Landing />
+    </>
+  );
+}

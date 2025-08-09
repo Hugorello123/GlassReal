@@ -1,14 +1,55 @@
 // src/dashboard.tsx
+import { useEffect, useState } from "react";
 import EthPrice from "./lib/eth";
 import BnbPrice from "./lib/bnb";
-
 import WhaleTransfersLive from "./components/WhaleTransfersLive";
 import IntelligenceFeed from "./lib/IntelligenceFeed";
 import MarketTickerGroup from "./components/MarketTickerGroup";
-// GuruDrawer handled within IntelligenceFeed component
+import BusinessTicker from "./components/BusinessTicker"; // <- adjust if your path differs
 
-// Removed unused imports for cleaner code
-const Dashboard = () => {
+// --- Simple no-key news list (bulleted) ---
+function NewsList() {
+  const [items, setItems] = useState<string[]>(["Loading news…"]);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function load() {
+      try {
+        const url =
+          "https://hn.algolia.com/api/v1/search?query=finance&tags=story&hitsPerPage=20";
+        const res = await fetch(url, { headers: { Accept: "application/json" } });
+
+        if (!res.ok) {
+          if (alive) setItems(["News Headlines following soon…"]);
+          return;
+        }
+
+        const data: any = await res.json();
+        const titles: string[] = Array.isArray(data?.hits)
+          ? data.hits.map((h: any) => h?.title).filter(Boolean)
+          : [];
+
+        if (alive) setItems(titles.length ? titles.slice(0, 8) : ["News Headlines following soon…"]);
+      } catch {
+        if (alive) setItems(["News Headlines following soon…"]);
+      }
+    }
+
+    load();
+    const id = window.setInterval(load, 10 * 60 * 1000);
+    return () => { alive = false; window.clearInterval(id); };
+  }, []);
+
+  return (
+    <ul style={{ listStyle: "disc", paddingLeft: 20, lineHeight: 1.6 }}>
+      {items.map((t, i) => <li key={i}>{t}</li>)}
+    </ul>
+  );
+}
+
+// --- Main Dashboard ---
+export default function Dashboard() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-black to-gray-900 text-white p-6">
       <h1 className="text-4xl font-bold mb-8 text-center bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-green-500">
@@ -21,138 +62,43 @@ const Dashboard = () => {
         <BnbPrice />
       </div>
 
-      {/* Enhanced Metric Blocks (8 cards with interactions) */}
+      {/* Metric Blocks (example placeholders) */}
       <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8 animate-slide-in">
-        {/* Whale Alerts */}
-        <div
-          className="bg-white/10 p-6 rounded-xl text-center min-h-[120px] cursor-pointer hover:animate-pulse-glow transition-all duration-300"
-          title="Number of recent whale activity alerts"
-          onClick={() => alert("Coming soon: Whale Alert Detail View")}
-        >
-          <h2 className="text-sm text-gray-300">Whale Alerts</h2>
-          <p className="text-xl font-bold text-orange-400">47</p>
-        </div>
-
-        {/* Large Transfers */}
-        <div
-          className="bg-white/10 p-6 rounded-xl text-center min-h-[120px] cursor-pointer"
-          title="Total value of large token transfers"
-          onClick={() => alert("Coming soon: Transfer Explorer")}
-        >
-          <h2 className="text-sm text-gray-300">Large Transfers</h2>
-          <p className="text-xl font-bold text-cyan-400">$89M</p>
-        </div>
-
-        {/* ETH Block */}
-        <div
-          className="bg-white/10 p-6 rounded-xl text-center min-h-[120px] cursor-pointer"
-          title="Latest Ethereum blockchain block number"
-          onClick={() => alert("Coming soon: ETH Block Explorer")}
-        >
-          <h2 className="text-sm text-gray-300">ETH Block</h2>
-          <p className="text-xl font-bold">21,089,456</p>
-        </div>
-
-        {/* BSC Block */}
-        <div
-          className="bg-white/10 p-6 rounded-xl text-center min-h-[120px] cursor-pointer"
-          title="Latest Binance Smart Chain block number"
-          onClick={() => alert("Coming soon: BSC Block Explorer")}
-        >
-          <h2 className="text-sm text-gray-300">BSC Block</h2>
-          <p className="text-xl font-bold">42,817,639</p>
-        </div>
-
-        {/* TSLA Change */}
-        <div
-          className="bg-white/10 p-6 rounded-xl text-center min-h-[120px] cursor-pointer"
-          title="TSLA stock movement over last 24h"
-          onClick={() => alert("Coming soon: TSLA Chart")}
-        >
-          <h2 className="text-sm text-gray-300">TSLA Change</h2>
-          <p className="text-xl font-bold text-orange-400">+2.34%</p>
-        </div>
-
-        {/* USD/EUR */}
-        <div
-          className="bg-white/10 p-6 rounded-xl text-center min-h-[120px] cursor-pointer"
-          title="Current USD to Euro exchange rate"
-          onClick={() => alert("Coming soon: Forex Details")}
-        >
-          <h2 className="text-sm text-gray-300">USD/EUR</h2>
-          <p className="text-xl font-bold text-cyan-400">0.9245</p>
-        </div>
-
-        {/* Gold */}
-        <div
-          className="bg-white/10 p-6 rounded-xl text-center min-h-[120px] cursor-pointer"
-          title="Current price of Gold per ounce"
-          onClick={() => alert("Coming soon: Gold Trend")}
-        >
-          <h2 className="text-sm text-gray-300">Gold</h2>
-          <p className="text-xl font-bold text-yellow-400">$2,045.50</p>
-        </div>
-
-        {/* Total Market Cap */}
-        <div
-          className="bg-white/10 p-6 rounded-xl text-center min-h-[120px] cursor-pointer"
-          title="Combined crypto market capitalization"
-          onClick={() => alert("Coming soon: Market Overview")}
-        >
-          <h2 className="text-sm text-gray-300">Total Market Cap</h2>
-          <p className="text-xl font-bold text-green-400">$1.2T</p>
-        </div>
+        <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">Whale Alerts: 47</div>
+        <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">Large Transfers: $89M</div>
+        <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">ETH Block: 21,089,456</div>
+        <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">BSC Block: 42,817,639</div>
       </section>
 
-      {/* 🐋 Whale Transfers Section */}
+      {/* 🐋 Whale Transfers */}
       <section className="mt-12">
         <h2 className="text-2xl font-bold text-orange-400 mb-6">🐋 Live Whale Transfers</h2>
-        {/* 🟩 Main whale stream (comes first as per instruction) */}
         <WhaleTransfersLive />
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-          {[
-            { token: "ETH", volume: "2,347 ETH", usd: "$8.5M", change: "+12.3%" },
-            { token: "BTC", volume: "143.2 BTC", usd: "$6.2M", change: "+8.1%" },
-            { token: "USDT", volume: "4.8M USDT", usd: "$4.8M", change: "+2.1%" },
-            { token: "USDC", volume: "3.2M USDC", usd: "$3.2M", change: "+1.8%" },
-          ].map((item) => (
-            <div
-              key={item.token}
-              className="bg-white/5 rounded-lg p-4 text-white shadow-sm"
-            >
-              <div className="text-sm text-gray-400 font-semibold">{item.token}</div>
-              <div className="text-xl font-bold mt-1">{item.volume}</div>
-              <div className="text-sm text-gray-300">{item.usd}</div>
-              <div
-                className={`text-xs mt-1 ${
-                  item.change.startsWith("-") ? "text-red-400" : "text-green-400"
-                }`}
-              >
-                {item.change}
-              </div>
-            </div>
-          ))}
-        </div>
       </section>
 
-      {/* 📊 Market Ticker Section */}
+      {/* 📊 Market Ticker + Business ticker line */}
+<section className="mt-10">
+  <MarketTickerGroup />
+  <section className="mt-6">
+    <BusinessTicker />
+  </section>
+</section>
+git commit -m "Describe your changes here"git commit -m "Describe your changes here"
+
+      {/* 🗞️ Finance headlines (bulleted) */}
       <section className="mt-10">
-        <MarketTickerGroup />
+        <h2 className="text-xl font-semibold mb-3">Finance Headlines</h2>
+        <NewsList />
       </section>
 
-      {/* 🧠 Market Intelligence Feed Section */}
+      {/* 🧠 Market Intelligence */}
       <section className="mt-12">
         <IntelligenceFeed />
       </section>
 
       <div className="mt-8 text-center">
-        <a href="/" className="text-cyan-400 hover:underline">
-          ← Back to Landing Page
-        </a>
+        <a href="/" className="text-cyan-400 hover:underline">← Back to Landing Page</a>
       </div>
     </main>
   );
-};
-
-export default Dashboard;
+}
