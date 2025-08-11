@@ -1,68 +1,37 @@
 // src/components/MarketTickerGroup.tsx
-import { useState, useEffect } from "react";
-import "../components/ticker.css"; // Assuming your ticker styles live here
-import { fetchCoinStatsNews } from "../lib/fetchNews";
+import React from "react";
 
-const MarketTickerGroup = () => {
-  const [newsHeadlines, setNewsHeadlines] = useState<string[]>([]);
+type RowProps = { title: string; emoji: string; items: string[] };
 
-  useEffect(() => {
-    const getNews = async () => {
-      try {
-        const headlines = await fetchCoinStatsNews();
-        setNewsHeadlines(headlines);
-      } catch (err) {
-        console.error("Failed to load news:", err);
-      }
-    };
-    getNews();
-  }, []);
-
-  const tickers = [
-    {
-      id: "news",
-      label: "📰 News Headlines",
-      items: newsHeadlines.length ? newsHeadlines : ["Loading news..."],
-    },
-    {
-      id: "crypto",
-      label: "Crypto Market 🪙",
-      items: ["BTC $29,000", "ETH $1,850", "SOL $23.50", "XRP $0.64", "DOGE +24%", "LINK $7.50"],
-    },
-    {
-      id: "gas",
-      label: "Gas Tracker ⚡",
-      items: ["ETH Gas: 24 Gwei", "Polygon: 19 Gwei", "BSC: 11 Gwei"],
-    },
-    {
-      id: "indices",
-      label: "Global Indices 📈",
-      items: ["S&P 500 +0.74%", "NASDAQ -1.2%", "DAX +0.35%", "NIKKEI +1.1%"],
-    },
-    {
-      id: "commodities",
-      label: "Commodities 🪨",
-      items: ["Gold $2,045", "Silver $24.30", "Oil $82.10", "Natural Gas $2.88"],
-    },
-  ];
+function Row({ title, emoji, items }: RowProps) {
   return (
-    <div className="space-y-4">
-      {tickers.map((ticker) => (
-        <div key={ticker.id} className="overflow-hidden bg-white/5 rounded-md">
-          <div className="text-sm text-gray-300 px-4 pt-2">{ticker.label}</div>
-          <div className="ticker px-4 py-2">
-            <div className="ticker__content">
-              {ticker.items.map((item, idx) => (
-                <span key={idx} className="mr-8 whitespace-nowrap">
-                  {item}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-      ))}
+    <div className="bg-white/5 rounded-xl px-4 py-3 mb-4">
+      <div className="flex items-center gap-2 text-sm font-semibold opacity-90 mb-2">
+        <span>{emoji}</span>
+        <span>{title}</span>
+      </div>
+      <div className="text-sm overflow-x-auto whitespace-nowrap no-scrollbar">
+        {items.join("   •   ")}
+      </div>
     </div>
   );
-};
+}
 
-export default MarketTickerGroup;
+export default function MarketTickerGroup() {
+  // Static placeholders (clean labels). We’ll wire live data later.
+  const crypto = ["BTC +0.8%", "ETH $4,206", "DOGE +2.4%", "LINK $7.50"];
+  const gas = ["ETH: 19 Gwei", "BSC: 11 Gwei"];
+  const indices = ["NDX +0.6%", "SPX +0.4%", "DAX +0.35%", "NIKKEI +1.1%"];
+  const equity = ["AAPL $225.10", "NVDA $123.45", "TSLA $198.20", "AMZN +0.7%"];
+  const commodities = ["Gold $2,345", "Silver $29.10", "Brent $82.10", "Natural Gas $2.88"];
+
+  return (
+    <section className="mt-6">
+      <Row title="Crypto Market" emoji="🌐" items={crypto} />
+      <Row title="Gas Tracker" emoji="⚡" items={gas} />
+      <Row title="Global Indices" emoji="📈" items={indices} />
+      <Row title="Equity Watchlist" emoji="📊" items={equity} />
+      <Row title="Commodities" emoji="🛢️" items={commodities} />
+    </section>
+  );
+}
