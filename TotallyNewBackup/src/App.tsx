@@ -1,37 +1,17 @@
-import NewsTicker from "./NewsTicker";
+// src/App.tsx
+import React from "react";
+
+// adjust these import paths only if your files live elsewhere
 import Landing from "./landing";
-import Dashboard from "./dashboard";  // <-- changed
-import Login from "./login";
-import BusinessTicker from "./components/BusinessTicker";
+import Dashboard from "./dashboard";
 
 export default function App() {
-  const path = window.location.pathname.toLowerCase();
+  const path =
+    (typeof window !== "undefined" ? window.location.pathname : "/").toLowerCase();
 
-  // render by URL path
-  if (path.startsWith("/dashboard")) {
-    return (
-      <>
-        <NewsTicker />
-         <BusinessTicker /> 
-        <Dashboard />
-      </>
-    );
-  }
+  if (path === "/" || path === "/index.html") return <Landing />;
+  if (path.startsWith("/dashboard")) return <Dashboard />;
 
-  if (path.startsWith("/login")) {
-    return (
-      <>
-        <NewsTicker />
-        <Login />
-      </>
-    );
-  }
-
-  // default: landing
-  return (
-    <>
-      <NewsTicker />
-      <Landing />
-    </>
-  );
+  // fallback
+  return <Landing />;
 }

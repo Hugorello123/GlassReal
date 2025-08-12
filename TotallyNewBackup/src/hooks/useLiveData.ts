@@ -24,9 +24,9 @@ export function useLiveData() {
       try {
         setLoading(true);
         
-        // Use a simple CORS proxy for CoinGecko API
+        // no more coin gecko 
         const response = await fetch(
-          'https://api.coingecko.com/api/v3/simple/price?ids=ethereum,binancecoin&vs_currencies=usd&include_24hr_change=true'
+        '/api/cg/api/v3/simple/price?ids=bitcoin,ethereum,solana,binancecoin&vs_currencies=usd&include_24hr_change=true'
         );
         
         if (response.ok) {

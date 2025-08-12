@@ -1,13 +1,16 @@
 // src/dashboard.tsx
-import { useEffect, useState } from "react";
-import EthPrice from "./lib/eth";
-import BnbPrice from "./lib/bnb";
-import WhaleTransfersLive from "./components/WhaleTransfersLive";
-import IntelligenceFeed from "./lib/IntelligenceFeed";
-import MarketTickerGroup from "./components/MarketTickerGroup";
-import BusinessTicker from "./components/BusinessTicker"; // <- adjust if your path differs
+import React, { useEffect, useState } from "react";
 
-// --- Simple no-key news list (bulleted) ---
+import MarketTickerGroup from "@/components/MarketTickerGroup";
+import BusinessTicker from "@/components/BusinessTicker";
+import WhaleTransfersLive from "@/components/WhaleTransfersLive";
+import WhaleAlertsRow from "@/components/WhaleAlertsRow";
+
+import EthPrice from "@/lib/eth";
+import BnbPrice from "@/lib/bnb";
+import IntelligenceFeed from "@/lib/IntelligenceFeed";
+
+/* --- Simple no-key news list (stub) --- */
 function NewsList() {
   const [items, setItems] = useState<string[]>(["Loading news…"]);
 
@@ -16,20 +19,18 @@ function NewsList() {
 
     async function load() {
       try {
-        const url =
-          "https://hn.algolia.com/api/v1/search?query=finance&tags=story&hitsPerPage=20";
-        const res = await fetch(url, { headers: { Accept: "application/json" } });
-
+        const res = await fetch(
+          "https://hn.algolia.com/api/v1/search?query=finance&tags=story&hitsPerPage=20",
+          { headers: { Accept: "application/json" } }
+        );
         if (!res.ok) {
           if (alive) setItems(["News Headlines following soon…"]);
           return;
         }
-
         const data: any = await res.json();
         const titles: string[] = Array.isArray(data?.hits)
           ? data.hits.map((h: any) => h?.title).filter(Boolean)
           : [];
-
         if (alive) setItems(titles.length ? titles.slice(0, 8) : ["News Headlines following soon…"]);
       } catch {
         if (alive) setItems(["News Headlines following soon…"]);
@@ -42,62 +43,58 @@ function NewsList() {
   }, []);
 
   return (
-    <ul style={{ listStyle: "disc", paddingLeft: 20, lineHeight: 1.6 }}>
-      {items.map((t, i) => <li key={i}>{t}</li>)}
-    </ul>
+    <section className="bg-white/5 rounded-2xl p-4">
+      <h2 className="text-lg font-semibold mb-3">News</h2>
+      <ul className="list-disc pl-5 space-y-2 text-sm opacity-90">
+        {items.map((t, i) => <li key={i}>{t}</li>)}
+      </ul>
+    </section>
   );
 }
 
-// --- Main Dashboard ---
+/* --- Main Dashboard (single default export) --- */
 export default function Dashboard() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-black to-gray-900 text-white p-6">
-      <h1 className="text-4xl font-bold mb-8 text-center bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-green-500">
-        GlassTrade Dashboard
-      </h1>
+      <div className="max-w-6xl mx-auto space-y-8">
+        <h1 className="text-3xl md:text-4xl font-bold text-center bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-green-500">
+          GlassTrade Dashboard
+        </h1>
 
-      {/* Live Price Components */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 mb-8">
-        <EthPrice />
-        <BnbPrice />
-      </div>
+        {/* Live Price Components */}
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <EthPrice />
+          <BnbPrice />
+        </section>
 
-      {/* Metric Blocks (example placeholders) */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8 animate-slide-in">
-        <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">Whale Alerts: 47</div>
-        <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">Large Transfers: $89M</div>
-        <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">ETH Block: 21,089,456</div>
-        <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">BSC Block: 42,817,639</div>
-      </section>
+        {/* Live price “trains” + business ticker */}
+        <section className="space-y-6">
+          <MarketTickerGroup />
+          <BusinessTicker />
+        </section>
 
-      {/* 🐋 Whale Transfers */}
-      <section className="mt-12">
-        <h2 className="text-2xl font-bold text-orange-400 mb-6">🐋 Live Whale Transfers</h2>
-        <WhaleTransfersLive />
-      </section>
+        {/* Whale Alerts headline row */}
+        <section className="mt-2">
+          <WhaleAlertsRow />
+        </section>
 
-      {/* 📊 Market Ticker + Business ticker line */}
-<section className="mt-10">
-  <MarketTickerGroup />
-  <section className="mt-6">
-    <BusinessTicker />
-  </section>
-</section>
-git commit -m "Describe your changes here"git commit -m "Describe your changes here"
+        {/* Live Whale Transfers */}
+        <section className="mt-6">
+          <h2 className="text-2xl font-bold text-orange-400 mb-4">🐋 Live Whale Transfers</h2>
+          <WhaleTransfersLive />
+        </section>
 
-      {/* 🗞️ Finance headlines (bulleted) */}
-      <section className="mt-10">
-        <h2 className="text-xl font-semibold mb-3">Finance Headlines</h2>
+        {/* Finance headlines */}
         <NewsList />
-      </section>
 
-      {/* 🧠 Market Intelligence */}
-      <section className="mt-12">
-        <IntelligenceFeed />
-      </section>
+        {/* Market Intelligence */}
+        <section className="mt-6">
+          <IntelligenceFeed />
+        </section>
 
-      <div className="mt-8 text-center">
-        <a href="/" className="text-cyan-400 hover:underline">← Back to Landing Page</a>
+        <div className="text-center">
+          <a href="/" className="text-cyan-400 hover:underline">← Back to Landing Page</a>
+        </div>
       </div>
     </main>
   );
