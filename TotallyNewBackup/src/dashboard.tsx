@@ -5,7 +5,7 @@ import BnbPrice from "./lib/bnb";
 import WhaleTransfersLive from "./components/WhaleTransfersLive";
 import IntelligenceFeed from "./lib/IntelligenceFeed";
 import MarketTickerGroup from "./components/MarketTickerGroup";
-import BusinessTicker from "./components/BusinessTicker"; // <- adjust if your path differs
+import BusinessTicker from "./components/BusinessTicker";
 
 // --- Simple no-key news list (bulleted) ---
 function NewsList() {
@@ -19,17 +19,14 @@ function NewsList() {
         const url =
           "https://hn.algolia.com/api/v1/search?query=finance&tags=story&hitsPerPage=20";
         const res = await fetch(url, { headers: { Accept: "application/json" } });
-
         if (!res.ok) {
           if (alive) setItems(["News Headlines following soon…"]);
           return;
         }
-
         const data: any = await res.json();
         const titles: string[] = Array.isArray(data?.hits)
           ? data.hits.map((h: any) => h?.title).filter(Boolean)
           : [];
-
         if (alive) setItems(titles.length ? titles.slice(0, 8) : ["News Headlines following soon…"]);
       } catch {
         if (alive) setItems(["News Headlines following soon…"]);
@@ -62,7 +59,7 @@ export default function Dashboard() {
         <BnbPrice />
       </div>
 
-      {/* Metric Blocks (example placeholders) */}
+      {/* Metric Blocks */}
       <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8 animate-slide-in">
         <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">Whale Alerts: 47</div>
         <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">Large Transfers: $89M</div>
@@ -77,13 +74,12 @@ export default function Dashboard() {
       </section>
 
       {/* 📊 Market Ticker + Business ticker line */}
-<section className="mt-10">
-  <MarketTickerGroup />
-  <section className="mt-6">
-    <BusinessTicker />
-  </section>
-</section>
-git commit -m "Describe your changes here"git commit -m "Describe your changes here"
+      <section className="mt-10">
+        <MarketTickerGroup />
+        <section className="mt-6">
+          <BusinessTicker />
+        </section>
+      </section>
 
       {/* 🗞️ Finance headlines (bulleted) */}
       <section className="mt-10">
