@@ -136,7 +136,7 @@ export default function Dashboard() {
 
       {/* Market ticker + business ticker */}
       <section className="mt-10">
-        <MarketTickerGroup />
+       <MarketTickerGroup /> 
         <div className="mt-6">
           <BusinessTicker />
         </div>
