@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.vite/
+.env
+.env.*
+.DS_Store
+src/components/GoldBox.tsx
+src/components/GoldPriceBox.tsx
