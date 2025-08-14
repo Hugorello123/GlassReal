@@ -1,56 +1,15 @@
 // src/dashboard.tsx
-import React, { useEffect, useState } from "react";
+import React from "react";
 
 import EthPrice from "@/lib/eth";
 import BnbPrice from "@/lib/bnb";
+
 import WhaleAlertsRow from "@/components/WhaleAlertsRow";
 import MarketTickerGroup from "@/components/MarketTickerGroup";
 import BusinessTicker from "@/components/BusinessTicker";
-//import NewsTicker from "@/components/NewsTicker";
 import GoldBox from "@/components/GoldBox";
-
-/* ---- Simple News List ---- */
-function NewsList() {
-  const [items, setItems] = useState<string[]>(["Loading news…"]);
-
-  useEffect(() => {
-    let alive = true;
-    async function load() {
-      try {
-        const res = await fetch(
-          "https://hn.algolia.com/api/v1/search?query=finance&tags=story&hitsPerPage=20",
-          { headers: { Accept: "application/json" } }
-        );
-        if (!res.ok) {
-          if (alive) setItems(["News Headlines following soon…"]);
-          return;
-        }
-        const data: any = await res.json();
-        const titles: string[] = Array.isArray(data?.hits)
-          ? data.hits.map((h: any) => h?.title).filter(Boolean)
-          : [];
-        if (alive) setItems(titles.length ? titles.slice(0, 8) : ["News Headlines following soon…"]);
-      } catch {
-        if (alive) setItems(["News Headlines following soon…"]);
-      }
-    }
-    load();
-    const id = setInterval(load, 10 * 60 * 1000);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
-  }, []);
-
-  return (
-    <section className="bg-white/5 rounded-2xl p-4">
-      <h2 className="text-lg font-semibold mb-3">News</h2>
-      <ul className="list-disc pl-5 space-y-2 text-sm opacity-90">
-        {items.map((t, i) => <li key={i}>{t}</li>)}
-      </ul>
-    </section>
-  );
-}
+import BitcoinBox from "@/components/BitcoinBox";
+import OilBox from "@/components/OilBox";
 
 /* ---- MAIN DASHBOARD ---- */
 export default function Dashboard() {
@@ -60,37 +19,25 @@ export default function Dashboard() {
         GlassTrade Dashboard
       </h1>
 
-      {/* Optional: headline train */}
-      
-
       {/* Top two big price blocks */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6 mb-8">
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         <EthPrice />
         <BnbPrice />
       </section>
 
-      {/* Four small summary boxes */}
+      {/* Four widgets */}
       <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-10">
         {/* 1: Gold */}
         <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">
           <GoldBox />
         </div>
+<BitcoinBox />
+<OilBox />
 
-        {/* 2: Large Transfers */}
-        <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">
-          <div className="text-sm opacity-70 mb-1">Large Transfers</div>
-          <div className="text-2xl font-semibold">—</div>
-        </div>
 
-        {/* 3: ETH Block */}
+        {/* 4: Placeholder */}
         <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">
-          <div className="text-sm opacity-70 mb-1">ETH Block</div>
-          <div className="text-2xl font-semibold">—</div>
-        </div>
-
-        {/* 4: BSC Block */}
-        <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">
-          <div className="text-sm opacity-70 mb-1">BSC Block</div>
+          <div className="text-sm opacity-70 mb-1">Coming Soon</div>
           <div className="text-2xl font-semibold">—</div>
         </div>
       </section>
@@ -106,11 +53,6 @@ export default function Dashboard() {
         <div className="mt-6">
           <BusinessTicker />
         </div>
-      </section>
-
-      {/* Optional news list */}
-      <section className="mt-10">
-        <NewsList />
       </section>
 
       <div className="mt-8 text-center">
