@@ -14,7 +14,7 @@ const BusinessTicker: React.FC = () => {
     async function load() {
       try {
         const res = await fetch(
-          "https://hn.algolia.com/api/v1/search?query=business&tags=story&hitsPerPage=20",
+         "https://hn.algolia.com/api/v1/search_by_date?query=business&tags=story&hitsPerPage=20",
           { headers: { Accept: "application/json" } }
         );
         if (!res.ok) throw new Error(String(res.status));
