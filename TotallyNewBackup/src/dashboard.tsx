@@ -7,11 +7,12 @@ import BnbPrice from "@/lib/bnb";
 import WhaleAlertsRow from "@/components/WhaleAlertsRow";
 import MarketTickerGroup from "@/components/MarketTickerGroup";
 import BusinessTicker from "@/components/BusinessTicker";
+
 import GoldBox from "@/components/GoldBox";
 import BitcoinBox from "@/components/BitcoinBox";
 import OilBox from "@/components/OilBox";
+import ForexBox from "@/components/ForexBox";
 
-/* ---- MAIN DASHBOARD ---- */
 export default function Dashboard() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-black to-gray-900 text-white p-6">
@@ -31,14 +32,17 @@ export default function Dashboard() {
         <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">
           <GoldBox />
         </div>
-<BitcoinBox />
-<OilBox />
-
-
-        {/* 4: Placeholder */}
+        {/* 2: Bitcoin */}
         <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">
-          <div className="text-sm opacity-70 mb-1">Coming Soon</div>
-          <div className="text-2xl font-semibold">—</div>
+          <BitcoinBox />
+        </div>
+        {/* 3: Oil */}
+        <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">
+          <OilBox />
+        </div>
+        {/* 4: Forex alternating */}
+        <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">
+          <ForexBox />
         </div>
       </section>
 
@@ -56,9 +60,7 @@ export default function Dashboard() {
       </section>
 
       <div className="mt-8 text-center">
-        <a href="/" className="text-cyan-400 hover:underline">
-          ← Back to Landing Page
-        </a>
+        <a href="/" className="text-cyan-400 hover:underline">← Back to Landing Page</a>
       </div>
     </main>
   );
