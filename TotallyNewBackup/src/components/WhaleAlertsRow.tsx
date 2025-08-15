@@ -61,7 +61,7 @@ export default function WhaleAlertsRow() {
   useEffect(() => {
     let alive = true;
     const loadPrice = async () => {
-      const j = await safeJson("/api/bci/ticker");
+      const j = await safeJson("https://blockchain.info/ticker");
       const p = Number(j?.USD?.last ?? j?.USD?.["15m"]);
       if (alive && isFinite(p) && p > 0) setPrice(p);
     };
