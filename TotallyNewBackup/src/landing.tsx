@@ -18,7 +18,7 @@ const Landing = () => {
             <li>✓ Telegram Alerts</li>
           </ul>
           <a
-            href="/trial-payment"
+           href="/trial-payment"
             className="inline-block bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded"
           >
             Try Now
