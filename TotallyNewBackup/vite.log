@@ -1,0 +1,11 @@
+nohup: ignoring input
+
+> workspace@1.0.0 dev
+> vite
+
+error when starting dev server:
+Error: Port 3000 is already in use
+    at Server.onError$1 (file:///home/ubuntu/GlassReal/TotallyNewBackup/node_modules/vite/dist/node/chunks/dep-BHkUv4Z8.js:18710:28)
+    at Server.emit (node:events:524:28)
+    at emitErrorNT (node:net:1944:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21)
