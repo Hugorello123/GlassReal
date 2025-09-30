@@ -1,0 +1,257 @@
+// src/components/MarketTickerGroup.tsx
+import React, { useEffect, useMemo, useState } from "react";
+import EquitiesCommoditiesPanelSafe from "./EquitiesCommoditiesPanelSafe";
+
+/* ===== helpers ===== */
+const usd = (n: unknown) => {
+  const v = Number(n);
+  return Number.isFinite(v)
+    ? v.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 })
+    : "—";
+};
+const pct = (x: unknown) => {
+  const v = Number(x);
+  if (!Number.isFinite(v)) return "—";
+  const sign = v >= 0 ? "▲" : "▼";
+  return `${sign} ${Math.abs(v).toFixed(1)}%`;
+};
+
+/* ===== UI row (unchanged API) ===== */
+function TickerRow({
+  label,
+  emoji,
+  items,
+  speedSec = 36,
+}: {
+  label: string;
+  emoji: string;
+  items: string[];
+  speedSec?: number;
+}) {
+  const feed = useMemo(() => (items?.length ? items : ["…loading…"]), [items]);
+  const loop = useMemo(() => [...feed, "•", ...feed], [feed]);
+
+  return (
+    <div className="my-1 flex items-center gap-3">
+      <div className="w-28 text-sm text-gray-400">
+        {emoji} {label}
+      </div>
+
+      <div className="relative overflow-hidden whitespace-nowrap flex-1">
+        <div
+          className="inline-block animate-[marquee_linear_infinite]"
+          style={{ ["--tw-anim-dur" as any]: `${speedSec}s` }}
+        >
+          {loop.map((t, i) => (
+            <span key={i} className="mx-3 text-sm text-gray-200">
+              {t}
+            </span>
+          ))}
+        </div>
+      </div>
+      <style>{`
+        @keyframes marquee { 0%{ transform: translateX(0) } 100%{ transform: translateX(-50%) } }
+        .animate-\\[marquee_linear_infinite\\]{ animation: marquee var(--tw-anim-dur,36s) linear infinite; }
+      `}</style>
+    </div>
+  );
+}
+
+/* ===== data loaders ===== */
+// --- CRYPTO loader: use your proxy to CoinGecko; fallback to Binance ---
+async function loadCrypto(): Promise<string[]> {
+  const usd = (n: unknown) => {
+    const v = Number(n);
+    return Number.isFinite(v)
+      ? v.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 })
+      : "—";
+  };
+  const pct = (x: unknown) => {
+    const v = Number(x);
+    if (!Number.isFinite(v)) return "—";
+    return `${v >= 0 ? "▲" : "▼"} ${Math.abs(v).toFixed(1)}%`;
+  };
+
+  // 1) Try CoinGecko THROUGH YOUR PROXY (bypasses CORS)
+  try {
+    const r = await fetch(
+      "/api/cg/api/v3/simple/price?ids=bitcoin,ethereum,solana,binancecoin&vs_currencies=usd&include_24hr_change=true",
+      { headers: { Accept: "application/json" }, cache: "no-store" }
+    );
+    if (!r.ok) throw new Error(`cg ${r.status}`);
+    const j = await r.json();
+    const out = [
+      `BTC — ${usd(j?.bitcoin?.usd)} (${pct(j?.bitcoin?.usd_24h_change)})`,
+      `ETH — ${usd(j?.ethereum?.usd)} (${pct(j?.ethereum?.usd_24h_change)})`,
+      `SOL — ${usd(j?.solana?.usd)} (${pct(j?.solana?.usd_24h_change)})`,
+      `BNB — ${usd(j?.binancecoin?.usd)} (${pct(j?.binancecoin?.usd_24h_change)})`,
+    ];
+    // if anything missing, fall through to fallback
+    if (out.some(s => s.includes("—"))) throw new Error("cg incomplete");
+    return out;
+  } catch {
+    // 2) Fallback: Binance public (CORS OK, no key)
+    try {
+      const r2 = await fetch(
+        "https://api.binance.com/api/v3/ticker/24hr?symbols=%5B%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22,%22BNBUSDT%22%5D",
+        { headers: { Accept: "application/json" }, cache: "no-store" }
+      );
+      if (!r2.ok) throw new Error(`binance ${r2.status}`);
+      const arr = await r2.json(); // array of tickers
+      const by: Record<string, any> = Object.fromEntries(arr.map((o: any) => [o.symbol, o]));
+      return [
+        `BTC — ${usd(by.BTCUSDT?.lastPrice)} (${pct(by.BTCUSDT?.priceChangePercent)})`,
+        `ETH — ${usd(by.ETHUSDT?.lastPrice)} (${pct(by.ETHUSDT?.priceChangePercent)})`,
+        `SOL — ${usd(by.SOLUSDT?.lastPrice)} (${pct(by.SOLUSDT?.priceChangePercent)})`,
+        `BNB — ${usd(by.BNBUSDT?.lastPrice)} (${pct(by.BNBUSDT?.priceChangePercent)})`,
+      ];
+    } catch {
+      // Nothing? show placeholders so UI doesn't crash.
+      return [];
+    }
+  }
+}
+
+
+/* ===== main ===== */
+export default function MarketTickerGroup() {
+  const [crypto, setCrypto] = useState<string[]>([]);
+  // other rows: placeholders only (no network calls)
+  const equity: string[] = [];
+  const commodities: string[] = [];
+  const forex: string[] = [];
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const c = await loadCrypto();
+      if (!alive) return;
+      setCrypto(c.length ? c : ["BTC —", "ETH —", "SOL —", "BNB —"]);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+return (
+  <>
+    {/* Ticker rows stay at the top */}
+    <TickerRow label="Crypto" emoji="🟣" items={crypto} />
+    <TickerRow
+      label="Forex"
+      emoji="🟢"
+      items={["EURUSD —", "USDZAR —", "USDJPY —", "GBPUSD —"]}
+    />
+
+    {/* Panel comes AFTER, in normal flow, with spacing and low z-index */}
+    <section className="relative z-0 mt-8">
+      <EquitiesCommoditiesPanelSafe />
+    </section>
+  </>
+);
+
+// --- helper: fetch one Stooq symbol and return {open, close} ---
+async function stooqOne(sym: string): Promise<{ open?: number; close?: number }> {
+  try {
+    const url = `/api/stq/q/l/?s=${encodeURIComponent(sym)}&f=sd2t2ohlcv&h&e=csv`;
+    const txt = await fetch(url, { cache: "no-store" }).then((r) => r.text());
+    // CSV lines: header + one data line
+    const line = txt.split("\n")[1]?.trim();
+    if (!line) return {};
+    const parts = line.split(",");
+    const open = Number(parts[3]);
+    const close = Number(parts[6]);
+    if (!Number.isFinite(open) || !Number.isFinite(close)) return {};
+    return { open, close };
+  } catch {
+    return {};
+  }
+}
+
+function chip(label: string, open?: number, close?: number, dp = 0): string {
+  if (!Number.isFinite(open) || !Number.isFinite(close)) return `${label} —`;
+  const pct = ((close! - open!) / open!) * 100;
+  const pStr = close!.toLocaleString(undefined, {
+    minimumFractionDigits: dp,
+    maximumFractionDigits: dp,
+  });
+  const pctStr = `${pct >= 0 ? "▲" : "▼"} ${Math.abs(pct).toFixed(1)}%`;
+  return `${label} — ${pStr} (${pctStr})`;
+}
+
+// === Equities (S&P500, NDX, DJI, RUT) via stooq, 1 symbol per call
+async function loadEquities(): Promise<string[]> {
+  const label: Record<string, string> = {
+    "^spx": "S&P 500",
+    "^ndx": "Nasdaq-100",
+    "^dji": "Dow",
+    "^rut": "Russell 2000",
+  };
+
+  const out: string[] = [];
+  for (const s of Object.keys(label)) {
+    try {
+      const r = await fetch(
+        `/api/stq/q/l/?s=${encodeURIComponent(s)}&f=sd2t2ohlcv&e=csv`,
+        { cache: "no-store" }
+      );
+      const txt = await r.text();
+      const row = txt.trim().split("\n")[1] ?? "";
+      const parts = row.split(",");
+      const open = Number(parts[3]);
+      const close = Number(parts[6]);
+
+      if (Number.isFinite(open) && Number.isFinite(close)) {
+        const ch = ((close - open) / open) * 100;
+        const p = Math.round(close).toLocaleString();
+        out.push(`${label[s]} — ${p} (${ch >= 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(1)}%)`);
+      } else {
+        out.push(`${label[s]} —`);
+      }
+    } catch {
+      out.push(`${label[s]} —`);
+    }
+    // tiny pause so we don't look like a bot
+    await new Promise(res => setTimeout(res, 120));
+  }
+  return out;
+}
+
+// === Commodities (Gold, WTI, Brent, Copper) via stooq, 1 symbol per call
+async function loadCommodities(): Promise<string[]> {
+  // stooq tickers: gold=XAUUSD, WTI=CL.F, Brent=BR.F, Copper=HG.F
+  const label: Record<string, string> = {
+    "xauusd": "Gold",
+    "cl.f": "WTI",
+    "br.f": "Brent",
+    "hg.f": "Copper",
+  };
+
+  const out: string[] = [];
+  for (const s of Object.keys(label)) {
+    try {
+      const r = await fetch(
+        `/api/stq/q/l/?s=${encodeURIComponent(s)}&f=sd2t2ohlcv&e=csv`,
+        { cache: "no-store" }
+      );
+      const txt = await r.text();
+      const row = txt.trim().split("\n")[1] ?? "";
+      const parts = row.split(",");
+      const open = Number(parts[3]);
+      const close = Number(parts[6]);
+
+      if (Number.isFinite(open) && Number.isFinite(close)) {
+        const ch = ((close - open) / open) * 100;
+        const price =
+          s === "xauusd" ? Math.round(close).toLocaleString() : close.toFixed(2);
+        out.push(`${label[s]} — ${price} (${ch >= 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(1)}%)`);
+      } else {
+        out.push(`${label[s]} —`);
+      }
+    } catch {
+      out.push(`${label[s]} —`);
+    }
+    await new Promise(res => setTimeout(res, 120));
+  }
+  return out;
+}

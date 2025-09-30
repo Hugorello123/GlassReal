@@ -1,0 +1,12 @@
+{
+  "confBase": 50,
+  "newsWin": 60,
+  "newsStrongDiff": 2,
+  "paxStrong": 0.25,
+  "btcRiskStrong": 2.0,
+  "keywords": {
+    "bull": "safe\\s*haven|war|conflict|attack|sanction|escalat|hawkish|geopolit|inflation|surge|spike|jumps|rally",
+    "bear": "ceasefire|peace|dovish|deflation|cooling|falls|drops|plunge|selloff",
+    "events": "earthquake|hurricane|flood|tsunami|wildfire|terror|coup|missile|blackout|shutdown"
+  }
+}

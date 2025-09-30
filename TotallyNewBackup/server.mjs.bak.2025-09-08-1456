@@ -1,0 +1,403 @@
+// server.mjs — minimal, stable, ESM-only backend
+import express from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+// ESM __dirname helpers
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// App
+const app = express();
+const PORT = process.env.PORT || 5000;
+// --- CoinGecko passthrough with 60s cache ---
+const CG_BASE = 'https://api.coingecko.com';
+let cgCache = { qs: '', ts: 0, data: null };
+const CG_TTL_MS = 60_000;
+
+app.get('/api/cg/api/v3/simple/price', async (req, res) => {
+  const qs = (req.url.split('?')[1] || '');
+  const now = Date.now();
+
+  // serve fresh cache
+  if (cgCache.data && cgCache.qs === qs && (now - cgCache.ts) < CG_TTL_MS) {
+    return res.status(200).json(cgCache.data);
+  }
+
+  try {
+    const r = await fetch(`${CG_BASE}/api/v3/simple/price?${qs}`, {
+      headers: { 'accept': 'application/json', 'user-agent': 'glasstrade-pro' }
+    });
+    const data = await r.json();          // parse first
+    if (!r.ok) throw new Error(`cg:${r.status}`);
+    cgCache = { qs, ts: now, data };      // cache success
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json(data);
+  } catch (e) {
+    // on error/rate-limit, serve last good value (or {})
+    return res.status(200).json(cgCache.data || {});
+  }
+});
+
+// ---------- Exchange tag config (seed + optional override) ----------
+const seedTags = {
+  btc: {
+    binance: ["bc1q5xazp7wqh0zz5v2n0q6x0j2x8e9cqv..."], // sample; extend
+    coinbase: ["3QJmV3qfvL9SuYo34YihAf3sRCW3qSinyC"],
+    kraken:  ["1GtrKrakenHotWalletExampleAddrxxx"],
+  },
+  eth: {
+    binance: ["0x3f5CE5FBFe3E9af3971dD833D26BA9b5C936f0bE"],
+    coinbase:["0x503828976D22510aad0201ac7EC88293211D23Da"],
+    kraken:  ["0x0A869d79a7052C7f1b55a8EbAbbEa3420F0D1E13"],
+  }
+};
+
+function loadExtraTags() {
+  try {
+    const p = path.join(process.cwd(), "exchange-tags.json");
+    if (!fs.existsSync(p)) return;
+    const extra = JSON.parse(fs.readFileSync(p, "utf8"));
+    for (const k of ["btc","eth"]) {
+      if (!extra[k]) continue;
+      for (const ex of Object.keys(extra[k])) {
+        seedTags[k][ex] = [ ...(seedTags[k][ex] || []), ...extra[k][ex] ];
+      }
+    }
+  } catch {}
+}
+loadExtraTags();
+
+const flat = {
+  btc: new Set(Object.values(seedTags.btc).flat().map(s => s.trim())),
+  eth: new Set(Object.values(seedTags.eth).flat().map(s => s.toLowerCase().trim()))
+};
+const isBtcExchange = (addr) => !!addr && flat.btc.has(addr);
+const isEthExchange = (addr) => !!addr && flat.eth.has(addr?.toLowerCase?.());
+
+// ---------- Helpers ----------
+async function j(u, init) {
+  const r = await fetch(u, init);
+  if (!r.ok) throw new Error(String(r.status));
+  return r.json();
+}
+async function cgPrice(ids) {
+  const data = await j(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`).catch(() => null);
+  return (name) => Number(data?.[name]?.usd || 0);
+}
+
+// ===== 1) BTC exchange flow (unconfirmed, ~10m) =====
+app.get("/api/flow/btc", async (req, res) => {
+  try {
+    const window_s = Number(req.query.window_s || 600);
+    const min_usd  = Number(req.query.min_usd  || 2_000_000);
+
+    const px = await cgPrice("bitcoin");
+    const btcUsd = px("bitcoin");
+    const now = Math.floor(Date.now() / 1000);
+
+    const data = await j("https://blockchain.info/unconfirmed-transactions?format=json&cors=true");
+    const txs = Array.isArray(data?.txs) ? data.txs : [];
+
+    let toCnt=0,toUsd=0,fromCnt=0,fromUsd=0;
+    let top = {dir:null, usd:0, amount:0, txid:null};
+
+    for (const tx of txs) {
+      const t = Number(tx?.time) || now;
+      if (now - t > window_s) continue;
+
+      const outs = Array.isArray(tx?.out) ? tx.out : [];
+      const ins  = Array.isArray(tx?.inputs) ? tx.inputs : [];
+
+      const totalSats = outs.reduce((s,o)=> s + (Number(o?.value)||0), 0);
+      const totalBtc  = totalSats / 1e8;
+      const usd       = totalBtc * btcUsd;
+
+      const toEx   = outs.some(o => isBtcExchange(o?.addr));
+      const fromEx = ins.some(i => isBtcExchange(i?.prev_out?.addr));
+
+      if (usd >= min_usd) {
+        if (toEx)   { toCnt++;   toUsd   += usd; if (usd>top.usd) top = {dir:"to",   usd, amount:totalBtc, txid:tx?.hash}; }
+        if (fromEx) { fromCnt++; fromUsd += usd; if (usd>top.usd) top = {dir:"from", usd, amount:totalBtc, txid:tx?.hash}; }
+      }
+    }
+
+    res.json({
+      chain:"btc",
+      window_s, min_usd, price: btcUsd,
+      to_exch:{count:toCnt, usd:Math.round(toUsd)},
+      from_exch:{count:fromCnt, usd:Math.round(fromUsd)},
+      top
+    });
+  } catch (e) {
+    res.status(500).json({ error: "btc_flow_failed" });
+  }
+});
+
+// ===== 2) ETH exchange flow (confirmed, ~10m) =====
+app.get("/api/flow/eth", async (req, res) => {
+  try {
+    const window_s = Number(req.query.window_s || 600);
+    const min_usd  = Number(req.query.min_usd  || 2_000_000);
+    const rpc = "https://cloudflare-eth.com";
+
+    const px = await cgPrice("ethereum");
+    const ethUsd = px("ethereum");
+
+    const now = Math.floor(Date.now()/1000);
+    const post = (method, params=[]) =>
+      fetch(rpc, {method:"POST", headers:{ "content-type":"application/json" },
+        body:JSON.stringify({jsonrpc:"2.0", id:1, method, params})}).then(r=>r.json());
+
+    const latestHex = (await post("eth_blockNumber")).result;
+    const latest = parseInt(latestHex,16);
+
+    let toCnt=0,toUsd=0,fromCnt=0,fromUsd=0;
+    let top={dir:null, usd:0, amount:0, txid:null};
+    let scanned=0;
+
+    const limit = Math.min(60, latest); // ~12s/block => ~50 in 10m (cap 60)
+    while (scanned < limit) {
+      const h = "0x"+(latest-scanned).toString(16);
+      const blk = (await post("eth_getBlockByNumber",[h,true])).result;
+      if (!blk) break;
+      const ts = parseInt(blk.timestamp,16);
+      if (now - ts <= window_s) {
+        for (const tx of (blk.transactions || [])) {
+          if (!tx?.to || !tx?.from) continue;
+          const wei = BigInt(tx.value||"0x0"); if (wei===0n) continue;
+          const eth = Number(wei)/1e18; const usd = eth*ethUsd;
+          const toEx   = isEthExchange(tx.to);
+          const fromEx = isEthExchange(tx.from);
+          if (usd >= min_usd) {
+            if (toEx)   { toCnt++;   toUsd += usd;   if (usd>top.usd) top={dir:"to", usd, amount:eth, txid:tx.hash}; }
+            if (fromEx) { fromCnt++; fromUsd += usd; if (usd>top.usd) top={dir:"from", usd, amount:eth, txid:tx.hash}; }
+          }
+        }
+      }
+      scanned++;
+    }
+
+    res.json({
+      chain:"eth", window_s, min_usd, price:ethUsd,
+      to_exch:{count:toCnt, usd:Math.round(toUsd)},
+      from_exch:{count:fromCnt, usd:Math.round(fromUsd)},
+      top
+    });
+  } catch (e) {
+    res.status(500).json({error:"eth_flow_failed"});
+  }
+});
+
+// ===== 3) USDT (ETH) mints & burns (~1h) =====
+app.get("/api/stable/usdt-eth", async (req, res) => {
+  try {
+    const window_s = Number(req.query.window_s || 3600);
+    const rpc = "https://cloudflare-eth.com";
+    const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7".toLowerCase();
+    const TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    const ZERO_T = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+    const post = (method, params=[]) =>
+      fetch(rpc, {method:"POST", headers:{ "content-type":"application/json" },
+        body:JSON.stringify({jsonrpc:"2.0", id:1, method, params})}).then(r=>r.json());
+
+    const latest = parseInt((await post("eth_blockNumber")).result,16);
+    const blocks = Math.ceil(window_s/12)+2;
+    const fromBlock = "0x"+Math.max(0,latest-blocks).toString(16);
+
+    const logs = (await post("eth_getLogs", [{
+      fromBlock, toBlock:"latest", address: USDT, topics: [TRANSFER]
+    }])).result || [];
+
+    let mintsUsd=0, burnsUsd=0, mCnt=0, bCnt=0;
+    const px = await cgPrice("tether"); const usdtUsd = px("tether") || 1.0;
+    const bigprints = [];
+
+    for (const l of logs) {
+      const topics = l.topics || [];
+      if (topics.length < 3) continue;
+      const fromTopic = topics[1]; const toTopic = topics[2];
+      const value = Number(BigInt(l.data)/1000000n); // 6 decimals
+      const usd = value * usdtUsd;
+
+      if (fromTopic === ZERO_T) {
+        mCnt++; mintsUsd += usd;
+        const toAddr = "0x"+toTopic.slice(26);
+        if (isEthExchange(toAddr) && usd >= 50_000_000)
+          bigprints.push({usd: Math.round(usd), to: toAddr, tx: l.transactionHash});
+      } else if (toTopic === ZERO_T) {
+        bCnt++; burnsUsd += usd;
+      }
+    }
+
+    res.json({
+      asset:"USDT", chain:"eth", window_s,
+      mints:{count:mCnt, usd:Math.round(mintsUsd)},
+      burns:{count:bCnt, usd:Math.round(burnsUsd)},
+      bigprints
+    });
+  } catch (e) {
+    res.status(500).json({error:"usdt_eth_failed"});
+  }
+});
+
+// Static files (harmless; nginx usually handles this)
+app.use(express.static(path.join(__dirname, "dist")));
+app.get('/api/signal/recent', (req, res) => res.status(200).json([]));
+app.get('/api/edge/recent',   (req, res) => res.status(200).json([]));
+
+const WD_PATH = "/var/lib/glasstrade/watchdog.json";
+const STALE_MS = 60 * 60 * 1000; // 15 min
+
+app.get("/api/watchdog/summary", (req, res) => {
+  try {
+    if (!fs.existsSync(WD_PATH)) return res.status(200).json([]);
+    const { mtimeMs } = fs.statSync(WD_PATH);
+    if (Date.now() - mtimeMs > STALE_MS) return res.status(200).json([]);
+    const raw = fs.readFileSync(WD_PATH, "utf8");
+    let data = JSON.parse(raw || "[]");
+    if (!Array.isArray(data)) data = [];
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json(data);
+  } catch (e) {
+    console.error("[watchdog]", e);
+    return res.status(200).json([]);
+  }
+});
+app.get('/api/signal/recent', (req, res) => res.status(200).json([]));
+app.get('/api/edge/recent',   (req, res) => res.status(200).json([]));
+// --- Macro: UST 2Y/5Y/10Y + VIX (file-backed, 60m TTL) ---
+
+
+// Listen (single place)
+app.get('/api/signal/recent', (req,res)=>res.status(200).json([]));
+app.get('/api/edge/recent',   (req,res)=>res.status(200).json([]));
+app.listen(PORT, () => {
+  console.log(`API up on :${PORT}`);
+});
+// --- Macro: UST 2Y/5Y/10Y + VIX (file-backed, 60m TTL) ---
+
+const MACRO_PATH = "/var/lib/glasstrade/macro.json";
+const MACRO_TTL_MS = 60 * 60 * 1000;
+
+app.get("/api/macro/ust-vix", (req, res) => {
+  try {
+    if (!fs.existsSync(MACRO_PATH)) return res.status(200).json({});
+    const { mtimeMs } = fs.statSync(MACRO_PATH);
+    if (Date.now() - mtimeMs > MACRO_TTL_MS) return res.status(200).json({});
+    const data = JSON.parse(fs.readFileSync(MACRO_PATH, "utf8") || "{}");
+    if (data && data.ust2y != null && data.ust10y != null && data.curve_10y_2y == null) {
+      data.curve_10y_2y = Number((data.ust10y - data.ust2y).toFixed(2));
+    }
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json(data);
+  } catch (e) {
+    console.error("[macro]", e);
+    return res.status(200).json({});
+  }
+});
+// --- Flow endpoints (file-backed; returns zeros if missing/stale) ---
+const FLOW_PATH = "/var/lib/glasstrade/flow.json";
+const FLOW_TTL  = 60 * 60 * 1000; // 60m while testing
+
+function readFlowSafe(){
+  try{
+    if (!fs.existsSync(FLOW_PATH)) return null;
+    const { mtimeMs } = fs.statSync(FLOW_PATH);
+    if (Date.now() - mtimeMs > FLOW_TTL) return null;
+    const raw = fs.readFileSync(FLOW_PATH, "utf8");
+    return JSON.parse(raw || "{}");
+  } catch { return null; }
+}
+
+const ZERO_BTC = { to:0, from:0, net:0, state:"quiet" };
+const ZERO_ETH = { to:0, from:0, net:0, state:"quiet" };
+const ZERO_USDTE = { mints:0, burns:0 };
+
+app.get("/api/flow/btc", (req,res) => {
+  const f = readFlowSafe();
+  res.status(200).json((f && f.btc) || ZERO_BTC);
+});
+
+app.get("/api/flow/eth", (req,res) => {
+  const f = readFlowSafe();
+  res.status(200).json((f && f.eth) || ZERO_ETH);
+});
+
+app.get("/api/flow/usdt_eth", (req,res) => {
+  const f = readFlowSafe();
+  res.status(200).json((f && f.usdt_eth) || ZERO_USDTE);
+});
+// --- Signals endpoint (reads /var/lib/glasstrade/signals.json) ---
+{
+  const SIG_PATH = "/var/lib/glasstrade/signals.json";
+  app.get("/api/signals/recent", (req,res) => {
+    try {
+      if (!fs.existsSync(SIG_PATH)) return res.status(200).json([]);
+      const raw = fs.readFileSync(SIG_PATH, "utf8");
+      let arr = []; try { arr = JSON.parse(raw || "[]"); } catch {}
+      if (!Array.isArray(arr)) arr = [];
+      const limit = Math.max(1, Math.min(50, parseInt(req.query.limit) || 5));
+      arr.sort((a,b)=> new Date(b.t_open).getTime() - new Date(a.t_open).getTime());
+      res.setHeader("Cache-Control","no-store");
+      return res.status(200).json(arr.slice(0, limit));
+    } catch { return res.status(200).json([]); }
+  });
+}
+
+// ---- CoinGecko pass-through (temporary; bypasses nginx) ----
+app.use("/api/cg", async (req, res) => {
+  try {
+    const upstream = "https://api.coingecko.com" + req.originalUrl.replace(/^\/api\/cg/, "");
+    const r = await fetch(upstream, { headers: { "user-agent": "glasstrade-pass" } });
+    const body = await r.text(); // stream as-is
+    res.setHeader("Cache-Control", "no-store");
+    const ct = r.headers.get("content-type") || "application/json; charset=utf-8";
+    res.status(r.status).setHeader("Content-Type", ct).send(body);
+  } catch (e) {
+    console.error("[cg passthrough]", e);
+    res.status(502).json({ error: "coingecko_upstream_failed" });
+  }
+});
+
+// --- Signals rollup (last N days) ---
+{
+  const SIG_PATH = "/var/lib/glasstrade/signals.json";
+  app.get("/api/signals/rollup", (req,res) => {
+    try {
+      const days = Math.max(1, Math.min(90, parseInt(req.query.days)||30));
+      const cutoff = Date.now() - days*24*3600*1000;
+      let arr = [];
+      if (fs.existsSync(SIG_PATH)) {
+        try { arr = JSON.parse(fs.readFileSync(SIG_PATH,"utf8")||"[]"); } catch {}
+      }
+      if (!Array.isArray(arr)) arr = [];
+
+      const stats = {};
+      for (const s of arr) {
+        const t = new Date(s.t_open || s.t_close || 0).getTime();
+        if (!t || t < cutoff) continue;
+        if (s.pnl_bps==null || typeof s.hit!=="boolean") continue; // skip pending
+        const k = s.rule_id || "unknown";
+        if (!stats[k]) stats[k] = {count:0,hits:0,sum:0};
+        stats[k].count++;
+        stats[k].sum += Number(s.pnl_bps)||0;
+        if (s.hit) stats[k].hits++;
+      }
+
+      const out = {};
+      for (const [k,v] of Object.entries(stats)) {
+        const hit_rate = v.count ? v.hits / v.count : 0;
+        const avg_bps = v.count ? v.sum / v.count : 0;
+        let status = "watch";
+        if (hit_rate>=0.55 || avg_bps>=10) status = "active";
+        else if (hit_rate<0.5 && avg_bps<0) status = "down-weighted";
+        out[k] = { count:v.count, hits:v.hits, hit_rate:+(hit_rate*100).toFixed(0), avg_bps:+avg_bps.toFixed(0), status };
+      }
+      res.setHeader("Cache-Control","no-store");
+      return res.json(out);
+    } catch { return res.json({}); }
+  });
+}

@@ -35,8 +35,8 @@ export function useLiveData() {
           // Generate realistic sparkline data based on current price and change
           const ethPrice = apiData.ethereum.usd;
           const ethChange = apiData.ethereum.usd_24h_change;
-          const bnbPrice = apiData.binancecoin.usd;
-          const bnbChange = apiData.binancecoin.usd_24h_change;
+          const bnbPrice = apiData.bitcoin.usd;
+          const bnbChange = apiData.bitcoin.usd_24h_change;
           
           const ethStartPrice = ethPrice * (1 - ethChange / 100);
           const bnbStartPrice = bnbPrice * (1 - bnbChange / 100);

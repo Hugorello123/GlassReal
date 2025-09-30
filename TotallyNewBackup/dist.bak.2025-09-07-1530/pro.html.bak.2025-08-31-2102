@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GlassTrade • Pro Dashboard</title>
+<style>
+  :root{
+    --bg:#0b0e13; --panel:#141925; --panel2:#0f1420; --text:#e8eef9; --muted:#98a2b3;
+    --line:#20283a; --accent:#56c8ff; --good:#9ae6b4; --bad:#fca5a5; --amber:#fbbf24;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:linear-gradient(160deg,var(--bg),#0d121a);color:var(--text);
+    font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue","Noto Sans",sans-serif
+  }
+  a{color:#7dd3fc;text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:1200px;margin:0 auto;padding:24px}
+  .row{display:grid;gap:16px}
+  @media(min-width:900px){
+    .row-3{grid-template-columns:1fr 1fr 1fr}
+    .row-2{grid-template-columns:1.2fr 1fr}
+  }
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .card2{background:var(--panel2);border:1px dashed var(--line);border-radius:14px;padding:16px}
+  .h1{font-size:28px;font-weight:800;letter-spacing:.3px}
+  .h2{font-size:16px;font-weight:700;margin-bottom:8px}
+  .muted{color:var(--muted)}
+  .pill{display:inline-block;border-radius:999px;padding:2px 8px;font-size:12px;border:1px solid var(--line);background:#0e1422}
+  .bias{font-weight:800}
+  .bias.bullish{color:var(--good); box-shadow:0 0 0 1px rgba(16,185,129,.35), 0 0 12px rgba(16,185,129,.10)}
+  .bias.bearish{color:var(--bad);  box-shadow:0 0 0 1px rgba(239,68,68,.35),  0 0 12px rgba(239,68,68,.10)}
+  .bias.neutral{color:#cbd5e1;     box-shadow:0 0 0 1px rgba(148,163,184,.35), 0 0 8px rgba(148,163,184,.06)}
+  .grid{display:grid;gap:12px}
+  @media(min-width:700px){.grid-2{grid-template-columns:1fr 1fr}}
+  .imgbox img{width:100%;border-radius:10px;border:1px solid var(--line);display:block}
+  .foot{margin-top:18px;text-align:center;color:#a3aab7;font-size:12px}
+  .bar{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);color:#fde68a;border-radius:10px;padding:10px 12px}
+
+  /* flow pills */
+  .fpills{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 14px}
+  .fpill{display:inline-flex;gap:8px;align-items:center;padding:4px 10px;border-radius:999px;
+         background:#0e1422;border:1px solid var(--line);font-size:12px}
+  .fmono{font-variant-numeric:tabular-nums;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .fmuted{opacity:.75}
+  .fok{color:var(--good)}
+  .fbad{color:var(--bad)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row" style="align-items:center;margin-bottom:12px">
+      <div class="h1" style="background:linear-gradient(90deg,#67e8f9,#34d399);-webkit-background-clip:text;background-clip:text;color:transparent">
+        Pro Dashboard
+      </div>
+      <div style="justify-self:end;display:flex;gap:6px;flex-wrap:wrap">
+        <a href="/" class="pill">← Main</a>
+        <a href="/predictions.html" class="pill">Predictions</a>
+      </div>
+    </div>
+
+    <span id="upd" class="pill" style="opacity:.8">Updated: …</span>
+
+    <!-- live flow badges -->
+    <div id="flowPills" class="fpills">
+      <span class="fpill fmuted">flow loading…</span>
+    </div>
+
+    <!-- Session Bias -->
+    <div class="row row-2" style="margin-bottom:16px">
+      <div class="card" id="bias-card">
+        <div class="h2">
+          Session Bias
+          <span id="weekend" class="pill" style="margin-left:8px;display:none">weekend lean</span>
+        </div>
+        Bias:
+        <span id="bias" class="pill bias neutral">neutral</span>
+        <span class="muted">(<span id="score">50</span>)</span>
+         <!-- What this implies (deterministic, no LLM) -->
+<p id="bias-implication" style="margin-top:4px;font-size:12px;opacity:0.8">Loading implication…</p>
+<script>
+(function () {
+  // Try common selectors to find the existing Bias number on the page.
+  function readBias() {
+    const cands = [
+      document.querySelector('#bias-score'),
+      document.querySelector('.bias-score'),
+      document.querySelector('[data-bias]'),
+      document.querySelector('#biasValue')
+    ].filter(Boolean);
+
+    for (const el of cands) {
+      let txt = el.getAttribute('data-bias') || el.textContent || '';
+      // Keep only digits, dot, minus; also handle "Bias: 57" formats.
+      txt = String(txt).replace(/[^\d.\-:]/g, '');
+      // If format was like "Bias:57", take the last numeric part.
+      if (txt.includes(':')) txt = txt.split(':').pop();
+      const n = parseFloat(txt);
+      if (!Number.isNaN(n)) return n;
+    }
+    return NaN;
+  }
+
+  // Deterministic mapping from Bias -> implication text.
+  // 50 = neutral baseline. Buckets are conservative to avoid flip-flopping.
+  function implication(b) {
+    if (Number.isNaN(b)) return 'Awaiting bias…';
+    if (b <= 35) return 'Risk-off: favor shorts / safe-haven posture; gold support likely.';
+    if (b <= 45) return 'Leaning risk-off: fade strength; tighten stops on longs.';
+    if (b < 55)  return 'Neutral: range-trade; wait for BTC/ETH inflow confirmation.';
+    if (b < 65)  return 'Leaning risk-on: buy dips; keep position sizes modest.';
+    if (b < 75)  return 'Risk-on: momentum entries OK; trail stops aggressively.';
+    return 'Strong risk-on: breakout conditions; scale in only with flow confirmation.';
+  }
+
+  const out = document.getElementById('bias-implication');
+  let tries = 0;
+
+  function tick() {
+    const b = readBias();
+    out.textContent = implication(b);
+    // If Bias is set asynchronously, poll briefly without hammering.
+    if (Number.isNaN(b) && tries++ < 40) setTimeout(tick, 250);
+  }
+  tick();
+})();
+</script>
+
+        <div class="muted" style="margin-top:6px">
+          Drivers:
+          BTC 24h <span id="btc">n/a</span> •
+          Gold 24h <span id="gold">n/a</span> •
+          Headlines/hr <span id="heat">0</span>
+        </div>
+        <div class="muted" id="why" style="margin-top:4px"></div>
+
+        <div class="bar" style="margin-top:10px">
+          Read: BTC falling = mild tailwind; BTC rising = mild headwind. Gold ±0.7% confirms.
+          Watch DXY and headline heat (≥3/hr).
+        </div>
+      </div>
+
+      <!-- Event Playbook -->
+      <div class="card2">
+        <div class="h2">Event Playbook</div>
+        <div class="muted">
+          Risk-on (tariff relief, strong USD/yields) → bearish gold.
+          Risk-off (sanctions, shocks) → bullish gold. Window: 15–60m.
+        </div>
+        <div class="foot">Legend: 50 neutral; 55–64 mild; ≥65 strong.</div>
+      </div>
+    </div>
+
+    <!-- Analogs -->
+    <div class="card">
+      <div class="h2">Analog Scenarios (snapshots)</div>
+      <div id="analogs" class="grid grid-2">
+        <div class="muted">
+          Looking for <code>/analogs/manifest.json</code>… Drop images in <code>public/analogs/</code>
+          and create a manifest file to auto-populate.
+        </div>
+      </div>
+      <div class="foot">Tip: Use clear titles and short notes (e.g., “Aug 2019 Yuan deval — Gold +3%/24h”).</div>
+    </div>
+
+    <div class="foot">GlassTrade • experimental tools — not investment advice.</div>
+  </div>
+
+<script>
+(function(){
+  const $ = (id)=>document.getElementById(id);
+  const biasEl=$("bias"), scoreEl=$("score"), btcEl=$("btc"), goldEl=$("gold"), heatEl=$("heat"), whyEl=$("why");
+  const weekendEl=$("weekend");
+
+  const isWeekendUTC=()=>{const d=new Date().getUTCDay(); return d===0||d===6};
+  weekendEl.style.display = isWeekendUTC() ? "inline-block" : "none";
+
+  // helper fetch
+  async function j(u){
+    try{
+      const r=await fetch(u,{cache:"no-store"});
+      if(!r.ok) return null;
+      return await r.json();
+    }catch{ return null; }
+  }
+
+  // ---- Bias refresh (no page reload) ----
+  async function refreshBias(){
+    const prices = await j("/api/cg/api/v3/simple/price?ids=pax-gold,bitcoin&vs_currencies=usd&include_24hr_change=true");
+    const goldCh = Number(prices?.["pax-gold"]?.usd_24h_change);
+    const btcCh  = Number(prices?.bitcoin?.usd_24h_change);
+    const news   = await j("/api/gdelt/gold");
+    const headlines = Array.isArray(news?.articles) ? news.articles.length : 0;
+
+    const fmt=(n)=> Number.isFinite(n) ? (n>0? "+" : "") + n.toFixed(2) + "%" : "n/a";
+    btcEl.textContent  = fmt(btcCh);
+    goldEl.textContent = fmt(goldCh);
+    heatEl.textContent = String(headlines);
+
+    let score = 50;  // 50 = neutral
+    const why = [];
+
+    if (Number.isFinite(btcCh)) {
+      if (btcCh <= -1.5) { score += 8;  why.push("BTC risk-off"); }
+      else if (btcCh <= -0.5) { score += 4;  why.push("BTC mild risk-off"); }
+      else if (btcCh >=  1.5) { score -= 8;  why.push("BTC risk-on"); }
+      else if (btcCh >=  0.5) { score -= 4;  why.push("BTC mild risk-on"); }
+      else { why.push("BTC neutral"); }
+    }
+
+    if (Number.isFinite(goldCh)) {
+      if (goldCh >= 0.7)      { score += 5;  why.push("Gold confirming"); }
+      else if (goldCh <= -0.7){ score -= 5;  why.push("Gold drag"); }
+      else if (Math.abs(goldCh) >= 0.3) { why.push("Gold slight tone"); }
+      else { why.push("Gold flat"); }
+    }
+
+    const tape = headlines>=10?"noisy": headlines>=3?"active":"calm";
+    if (tape==="noisy") score = Math.round((score-50)*0.8 + 50); // dampen when noisy
+    score = Math.max(35, Math.min(65, Math.round(score)));
+
+    const bias =
+      score>=65 ? "bullish" :
+      score<=35 ? "bearish" :
+      score>55  ? "bullish" :
+      score<45  ? "bearish" : "neutral";
+
+    scoreEl.textContent = String(score);
+    biasEl.textContent  = bias;
+    biasEl.classList.remove("bullish","bearish","neutral");
+    biasEl.classList.add(bias);
+    whyEl.textContent = "Why: " + (why.join(" • ") || "inputs n/a") + " • tape " + tape;
+
+    $("upd").textContent = "Updated: " + new Date().toLocaleTimeString();
+  }
+
+  // ---- Analogs (optional) ----
+  async function loadAnalogs(){
+    const box=$("analogs");
+    try{
+      const r=await fetch("/analogs/manifest.json",{cache:"no-store"});
+      if(!r.ok) return;
+      const m=await r.json();
+      if(!m?.items?.length) return;
+      box.innerHTML="";
+      for(const it of m.items){
+        const d=document.createElement("div"); d.className="imgbox";
+        d.innerHTML = `
+          <div class="h2" style="margin-bottom:6px">${(it.title||"Scenario")}</div>
+          <img src="${it.img}" alt="${(it.title||"Analog")}" />
+          ${it.note? `<div class="muted" style="margin-top:6px">${it.note}</div>`:""}
+        `;
+        box.appendChild(d);
+      }
+    }catch{}
+  }
+
+  // ---- Exchange / Stablecoin flow pills ----
+  async function loadFlow(){
+    try{
+      const [B,E,U] = await Promise.allSettled([
+        j('/api/flow/btc?window_s=1800&min_usd=500000'),   // last 30m, $500k+
+        j('/api/flow/eth?window_s=1800&min_usd=500000'),
+        j('/api/stable/usdt-eth?window_s=7200')            // last 2h
+      ]);
+      const money = (n) => (n||0).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
+      const pills = [];
+      const b=B.value, e=E.value, u=U.value;
+
+      function renderChain(tag, v){
+        if (!v) return '';
+        const quiet = (v.to_exch.usd + v.from_exch.usd) === 0;
+        const net = (v.to_exch.usd||0) - (v.from_exch.usd||0);
+        const dir = net>0 ? '→ EXCH' : net<0 ? '← EXCH' : '•';
+        const netClass = net>0 ? 'fok' : net<0 ? 'fbad' : 'fmuted';
+        const top = v.top?.usd
+          ? ` • top <span class="fmono">${money(v.top.usd)}</span>
+               <span class="fmuted">${v.top.dir==='to'?'→ EXCH':'← EXCH'}</span>`
+          : ` • <span class="fmuted">${quiet?'quiet':'—'}</span>`;
+        return `<span class="fpill">
+                  ${tag}: to <b>${v.to_exch.count}</b> / from <b>${v.from_exch.count}</b>${top}
+                  • net <span class="fmono ${netClass}">${money(Math.abs(net))}</span> <span class="fmuted">${dir}</span>
+                </span>`;
+      }
+
+      if (b) pills.push(renderChain('BTC', b));
+      if (e) pills.push(renderChain('ETH', e));
+
+      if (u){
+        const bias = u.mints.usd > u.burns.usd ? 'fok' : (u.mints.usd < u.burns.usd ? 'fbad' : 'fmuted');
+        pills.push(
+          `<span class="fpill">
+            USDT(ETH): <span class="${bias}">mints ${money(u.mints.usd)}</span> / burns ${money(u.burns.usd)}
+            ${u.bigprints?.length ? ` • big→exch ${u.bigprints.length}` : ``}
+          </span>`
+        );
+      }
+
+      const box = $("flowPills");
+      box.innerHTML = pills.length ? pills.join(' ') : '<span class="fpill fmuted">no flow</span>';
+    }catch{
+      $("flowPills").innerHTML = '<span class="fpill fbad">flow error</span>';
+    }
+  }
+
+  // kick everything
+  refreshBias();                // initial
+  loadAnalogs();                // optional
+  loadFlow();                   // initial
+  setInterval(refreshBias, 60_000); // bias every 60s
+  setInterval(loadFlow, 20_000);    // flow every 20s
+})();
+</script>
+</body>
+</html>

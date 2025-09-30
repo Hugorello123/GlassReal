@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GlassTrade • Pro Hub</title>
+  <meta name="description" content="Quick hub for Pro tools and pages." />
+  <style>
+    :root{
+      --bg:#0b0e13; --bg2:#0f1420; --panel:#121829; --text:#e8eef9; --muted:#a8b3c7;
+      --line:#1e2740; --accent:#6fd3ff; --ok:#3ddc97; --warn:#f5c451;
+    }
+    @media (prefers-color-scheme: light){
+      :root{ --bg:#f7fbff; --bg2:#eef5ff; --panel:#ffffff; --text:#0b1220; --muted:#5b6b84; --line:#e5ecf6; --accent:#146ce6; --ok:#159c6e; --warn:#b98000; }
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font: 16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji";
+      color:var(--text);
+      background:
+        radial-gradient(1200px 800px at 100% -10%, rgba(111,211,255,.08), transparent 60%),
+        radial-gradient(1200px 800px at -20% 110%, rgba(20,108,230,.08), transparent 60%),
+        linear-gradient(0deg, var(--bg2), var(--bg));
+      min-height:100%;
+    }
+    .wrap{max-width:1100px;margin:0 auto;padding:24px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:6px 0 22px;}
+    .title{font-weight:800;letter-spacing:.2px;margin:0;font-size:clamp(20px,2.4vw,28px);}
+    .subtitle{margin:6px 0 0;color:var(--muted);font-size:14px;}
+    .back{color:var(--muted);text-decoration:none;border:1px solid var(--line);padding:8px 12px;border-radius:10px}
+    .back:hover{color:var(--text);border-color:var(--accent)}
+    .grid{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));align-items:stretch;}
+    .card{
+      display:flex;flex-direction:column;justify-content:space-between;
+      background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.02)), var(--panel);
+      border:1px solid var(--line);border-radius:16px;padding:18px;text-decoration:none;color:inherit;
+      transition:transform .06s ease, box-shadow .06s ease, border-color .12s ease;
+      box-shadow:0 6px 20px rgba(0,0,0,.12);
+    }
+    .card:hover{transform:translateY(-2px);border-color:rgba(111,211,255,.5);box-shadow:0 10px 28px rgba(0,0,0,.18)}
+    .row{display:flex;align-items:center;gap:12px}
+    .icon{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;background:linear-gradient(145deg, rgba(111,211,255,.18), rgba(20,108,230,.12));border:1px solid var(--line);}
+    .card h3{margin:2px 0 2px;font-size:18px}
+    .desc{color:var(--muted);font-size:14px;margin:6px 0 14px}
+    .foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:auto}
+    .chip{font-size:12px;padding:4px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+    .chip.ok{color:var(--ok);border-color:color-mix(in hsl, var(--ok) 40%, var(--line));}
+    .chip.warn{color:var(--warn);border-color:color-mix(in hsl, var(--warn) 40%, var(--line));}
+    .chev{margin-left:auto;opacity:.8}
+    .muted-note{margin-top:22px;color:var(--muted);font-size:13px}
+    .card:focus-visible,.back:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:12px}
+    .subnote{font-size:12px;color:var(--muted);margin-top:2px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1 class="title">Pro Hub</h1>
+        <p class="subtitle">One stop to jump to Signals, Pro Lite, Watchdog, Indices, and the Legacy Pro board.</p>
+      </div>
+      <a class="back" href="/">← Back to Home</a>
+    </header>
+
+    <main class="grid" aria-label="Pro Hub cards">
+      <a class="card" href="/signals.html">
+        <div>
+          <div class="row">
+            <div class="icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5" opacity=".9"/>
+                <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="1.5" opacity=".8"/>
+                <circle cx="12" cy="12" r="2" fill="currentColor" />
+              </svg>
+            </div>
+            <h3>Signals &amp; Targets</h3>
+          </div>
+          <p class="desc">Bias, drivers, windows and levels in one clean list.</p>
+        </div>
+        <div class="foot"><span class="chip ok">Live</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+
+      <a class="card" href="/pro-lite.html">
+        <div>
+          <div class="row">
+            <div class="icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 13a8 8 0 1 1 16 0" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <path d="M12 13l5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3>Pro (Lite)</h3>
+          </div>
+          <p class="desc">Fast overview page with the essentials—built for speed.</p>
+        </div>
+        <div class="foot"><span class="chip ok">Live</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+
+      <a class="card" href="/watchdog.html">
+        <div>
+          <div class="row">
+            <div class="icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <circle cx="12" cy="12" r="3" fill="currentColor"/>
+              </svg>
+            </div>
+            <div>
+              <h3 style="margin:0">Watchdog</h3>
+              <div class="subnote">Coming soon: AI Sentiment engine</div>
+            </div>
+          </div>
+          <p class="desc">Headlines, pace, breadth &amp; VIX context.</p>
+        </div>
+        <div class="foot"><span class="chip warn">Evolving</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+
+      <a class="card" href="/indices.html">
+        <div>
+          <div class="row">
+            <div class="icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 19V5" stroke="currentColor" stroke-width="1.5" opacity=".7"/>
+                <path d="M4 15l5-5 3 3 6-6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h3>Indices</h3>
+          </div>
+          <p class="desc">US Tech 100 and friends—quick bias markers.</p>
+        </div>
+        <div class="foot"><span class="chip">Snapshot</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+
+      <a class="card" href="/pro.html">
+        <div>
+          <div class="row">
+            <div class="icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3l9 5-9 5-9-5 9-5Z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <path d="M21 13l-9 5-9-5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+              </svg>
+            </div>
+            <h3>Legacy Pro</h3>
+          </div>
+          <p class="desc">Older full board for reference.</p>
+        </div>
+        <div class="foot"><span class="chip">Reference</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+    </main>
+
+    <p class="muted-note">Tip: If a link target doesn’t exist yet, create it later—this hub won’t need changes.</p>
+  </div>
+</body>
+</html>

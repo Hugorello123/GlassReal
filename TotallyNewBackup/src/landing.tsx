@@ -1,4 +1,5 @@
-// /src/landing.tsx
+// src/landing.tsx
+import React from "react";
 
 const Landing = () => {
   return (
@@ -42,21 +43,33 @@ const Landing = () => {
           </a>
         </div>
       </div>
-      {/* End of Cards */}
-      <a
-        href="/login"
-        className="mt-10 text-sm text-cyan-400 underline hover:text-cyan-300 transition-colors"
-      >
-        Returning user? Log in →
-      </a>
 
-      {/* Developer sneak peek link */}
-      <a
-        href="/dashboard"
-        className="text-sm text-cyan-400 underline mt-10 block text-center hover:text-cyan-300 transition-colors"
+      {/* Hidden utility links (pushed way below the fold) */}
+      <div
+        id="low-links"
+        className="mt-[160vh] text-center text-xs opacity-20"
+        aria-hidden="true"
       >
-        Developer sneak peek: Go to Dashboard →
-      </a>
+        <a
+          href="/login"
+          className="block text-white/30 underline decoration-white/10 hover:text-cyan-300"
+        >
+          Returning user? Log in →
+        </a>
+        <a
+          href="/onboarding"
+          className="mt-3 block text-white/30 underline decoration-white/10 hover:text-cyan-300"
+        >
+          Direct Onboarding →
+        </a>
+        <a
+          href="/dashboard"
+          className="mt-3 block text-white/30 underline decoration-white/10 hover:text-cyan-300"
+        >
+          Developer sneak peek →
+        </a>
+      </div>
+      {/* End of footer */}
     </main>
   );
 };

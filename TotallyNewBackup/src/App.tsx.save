@@ -1,5 +1,6 @@
 // src/App.tsx
 import React from "react";
+import GuruPage from "@/pages/GuruPage";
 
 // adjust these import paths only if your files live elsewhere
 import Landing from "./landing";

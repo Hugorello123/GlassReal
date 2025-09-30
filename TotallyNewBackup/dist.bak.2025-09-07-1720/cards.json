@@ -1,0 +1,26 @@
+[
+  {
+    "id": "gold_event_pulse",
+    "name": "Gold Event Pulse",
+    "window_hours": "4-24",
+    "inputs": ["newswire:reuters,ap,ft", "DXY", "UST10Y", "VIX"],
+    "trigger": "news+macro_agree",
+    "alert_template": "🟡 Gold {bias} {conf}% — {why} → {window}."
+  },
+  {
+    "id": "btc_spx_flip",
+    "name": "BTC–S&P Regime Flip",
+    "window_hours": "24-72",
+    "inputs": ["corr30_btc_spx", "VIX", "DXY"],
+    "trigger": "corr_sign_flip+macro_agree",
+    "alert_template": "₿ Regime Flip {conf}% — corr {dir} + {macro} → {window}."
+  },
+  {
+    "id": "bnb_flow",
+    "name": "BNB Stablecoin Inflow Surge",
+    "window_hours": "24-72",
+    "inputs": ["stable_inflow_bnb", "new_addrs_bnb", "dex_vol_bnb"],
+    "trigger": "inflow>p90 & new_addrs_up & dex_vol_up",
+    "alert_template": "💧 BNB Flow {conf}% — inflows {pct} + wallets↑ + DEX↑ → {window}."
+  }
+]

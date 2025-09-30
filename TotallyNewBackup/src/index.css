@@ -3,3 +3,21 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* ---- Page scrolling sanity ---- */
+html, body, #root {
+  min-height: 100%;
+  height: auto;
+}
+
+body {
+  /* allow page to scroll unless a modal deliberately locks it */
+  overflow-y: auto;
+}
+
+/* Nice-to-have: prevent layout jump when scrollbar appears */
+:root { scrollbar-gutter: stable both-edges; }
+
+/* Mobile 100vh fix (iOS Safari). If you have Tailwind, you can use h-dvh classes. */
+@supports (-webkit-touch-callout: none) {
+  .h-screen { height: 100dvh; }
+}

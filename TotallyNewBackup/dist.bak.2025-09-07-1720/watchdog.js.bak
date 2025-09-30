@@ -1,0 +1,64 @@
+(() => {
+  const POLL_MS = 120000;
+  const ROOT_ID = "watchdog-root";
+  const ASSETS = ["Gold","Oil","BTC","USD","CNH","Stocks"];
+  const arrow = (n)=> n<=-2?"▼▼":n===-1?"▼":n===1?"▲":n>=2?"▲▲":"↔";
+  const mk = (h)=>{ const d=document.createElement("div"); d.innerHTML=h; return d.firstElementChild; };
+
+  function ensureRoot(){
+    let r = document.getElementById(ROOT_ID);
+    if (!r) {
+      r = document.createElement("section");
+      r.id = ROOT_ID;
+      r.style.marginTop = "16px";
+      r.style.border = "1px solid rgba(255,255,255,.08)";
+      r.style.borderRadius = "12px";
+      r.style.padding = "12px";
+      r.style.background = "rgba(255,255,255,.03)";
+      const anchor = document.body;
+      anchor.appendChild(r);
+    }
+    return r;
+  }
+
+  function render(themes){
+    const root = ensureRoot();
+    root.style.display = "block";
+    const cards = themes.map(t => {
+      const impacts = ASSETS.map(a => {
+        const v = (t.impact && typeof t.impact[a] === "number") ? t.impact[a] : 0;
+        return `<span style="opacity:.85">${a}: <b>${arrow(v)}</b></span>`;
+      }).join(" • ");
+      return `
+        <div class="wd-card" style="padding:10px;border:1px solid rgba(255,255,255,.06);border-radius:10px;margin-top:8px">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+            <div><strong>🔥 ${t.title}</strong></div>
+            <div style="opacity:.7">heat ${t.heat} • ${t.count}</div>
+          </div>
+          <div style="margin-top:6px">${impacts}</div>
+        </div>`;
+    }).join("");
+
+    root.innerHTML =
+      `<div style="font-weight:700;margin-bottom:6px">Sentimental Watchdog</div>` + cards;
+  }
+
+  function hide(){
+    const r = document.getElementById(ROOT_ID);
+    if (r) r.remove();
+  }
+
+  async function tick(){
+    try{
+      const res = await fetch("/api/watchdog/summary?window=6h", {cache:"no-store"});
+      const data = await res.json();
+      if (Array.isArray(data) && data.length) render(data);
+      else hide();
+    }catch{
+      hide();
+    }
+  }
+
+  tick();
+  setInterval(tick, POLL_MS);
+})();

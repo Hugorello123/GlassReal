@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Guru Predictions</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial; background:#0b0b0f; color:#eaeaea; }
+  .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+  h1 { font-size: 22px; margin: 0 0 14px; color: #fff; }
+  .grid { display:grid; gap:16px; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); }
+  .card { background: #101218; border: 1px solid #2a2f3a; border-radius: 14px; padding:14px; }
+  .row { display:flex; align-items:center; justify-content: space-between; gap:8px; }
+  .asset { font-weight:700; letter-spacing:.2px }
+  .score { font-variant-numeric: tabular-nums; font-weight:700; }
+  .up { color:#22c55e } .down { color:#ef4444 } .flat { color:#94a3b8 }
+  .why, .note, .ts { font-size: 12px; opacity:.8; margin-top:6px; }
+  .pill { font-size:11px; padding:2px 8px; border:1px solid #ffffff22; border-radius:999px; }
+  .muted { color:#a1a1aa }
+  a.back { font-size:12px; opacity:.8; text-decoration: none; border:1px solid #2a2f3a; padding:6px 10px; border-radius:999px }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row" style="margin-bottom:10px">
+      <h1>Guru Predictions</h1>
+      <a class="back" href="/" title="Back to dashboard">← Back</a>
+    </div>
+    <div class="row" style="margin-bottom:14px">
+      <div class="pill">Experimental signals — not investment advice</div>
+      <div class="pill muted" id="updated">—</div>
+    </div>
+
+    <div class="grid">
+      <div class="card" id="gold">
+        <div class="row"><div class="asset">Gold</div><div class="score flat">• 50</div></div>
+        <div class="why">Why: …</div>
+        <div class="note muted">Note: …</div>
+      </div>
+
+      <div class="card" id="btc">
+        <div class="row"><div class="asset">Bitcoin</div><div class="score flat">• 50</div></div>
+        <div class="why">Why: …</div>
+        <div class="note muted">Note: …</div>
+      </div>
+
+      <div class="card" id="wti">
+        <div class="row"><div class="asset">WTI Crude</div><div class="score flat">• 50</div></div>
+        <div class="why">Why: …</div>
+        <div class="note muted">Note: …</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const clamp = (n,min,max)=>Math.max(min,Math.min(max,n));
+const nowStr = ()=> new Date().toLocaleString();
+
+const kw = {
+  // shared helpers
+  geoUp:    ['missile','strike','drone','mobiliz','attack','escalat','sanction','blockade'],
+  geoDown:  ['ceasefire','peace','truce','de-escalat','talks'],
+  macroHot: ['hot cpi','sticky inflation','hawkish','surprise beat'],
+  macroCool:['dovish','cooling','disinflation','miss'],
+  // btc specific
+  btcUp:    ['etf inflow','spot etf','halving','adoption','upgrade','institutional'],
+  btcDown:  ['hack','exploit','outage','crackdown','sec sues','ban','delisting'],
+  // oil specific
+  oilUp:    ['outage','refinery fire','pipeline shut','opec cut','supply tight','sanction'],
+  oilDown:  ['demand slump','recession risk','ceasefire','inventory build']
+};
+
+async function j(url){ try{ const r=await fetch(url); if(!r.ok) throw 0; return await r.json(); }catch(_){ return null; } }
+const textify = a => (a?.title || a?.url || '').toLowerCase();
+
+function nudgeFromNews(articles, upWords=[], downWords=[], up=6, down=6){
+  const titles = (articles||[]).map(textify);
+  const has = (list)=> titles.some(t => list.some(w => t.includes(w)));
+  let s=0, reasons=[];
+  if(has(upWords)){ s+=up; reasons.push('escalation keywords'); }
+  if(has(downWords)){ s-=down; reasons.push('de-escalation keywords'); }
+  return {s,reasons};
+}
+
+function arrow(score){ if(score>55) return '▲'; if(score<45) return '▼'; return '•'; }
+function cls(score){ if(score>55) return 'up'; if(score<45) return 'down'; return 'flat'; }
+
+async function goldScore(){
+  let score=50, why=[];
+  const news = await j('/api/gdelt/gold');
+  const {s,reasons} = nudgeFromNews(news?.articles, [...kw.geoUp, ...kw.macroHot], [...kw.geoDown, ...kw.macroCool], 6, 6);
+  score += s; why = why.concat(reasons);
+
+  // Weekend: keep only news; (macro skipped by design)
+  const weekend = [0,6].includes(new Date().getDay());
+  const note = weekend ? 'Mkts closed — pre-market bias only' : 'News-only bias (macro light)';
+  return {score:clamp(score,0,100), why: why.length? why.join(', ') : 'No strong signal in the last hours', note};
+}
+
+async function btcScore(){
+  let score=50, why=[];
+  const cg = await j('/api/cg/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true');
+  const chg = cg?.bitcoin?.usd_24h_change;
+  if(typeof chg === 'number'){
+    if(chg > 0.5){ score += 8; why.push(`BTC +${chg.toFixed(2)}% 24h`); }
+    else if(chg < -0.5){ score -= 8; why.push(`BTC ${chg.toFixed(2)}% 24h`); }
+  }
+  const news = await j('/api/gdelt/btc');
+  const ups = ['etf','spot etf','inflow','adoption','upgrade','partnership'];
+  const downs = ['hack','exploit','crackdown','ban','lawsuit','sec sues'];
+  const {s,reasons} = nudgeFromNews(news?.articles, ups, downs, 4, 6);
+  score += s; why = why.concat(reasons);
+  return {score:clamp(score,0,100), why: why.length? why.join(', ') : 'Quiet tape', note:'24h change + headlines'};
+}
+
+async function wtiScore(){
+  let score=50, why=[];
+  const news = await j('/api/gdelt/wti');
+  const {s,reasons} = nudgeFromNews(news?.articles, kw.oilUp, kw.oilDown, 6, 6);
+  score += s; why = why.concat(reasons);
+  // If your /yq CL=F works later, add a small ±6 nudge on % move
+  return {score:clamp(score,0,100), why: why.length? why.join(', ') : 'No clear supply/demand catalyst', note:'Headlines bias'};
+}
+
+function renderCard(id, data){
+  const el = document.getElementById(id);
+  const s = clamp(Math.round(data.score),0,100);
+  el.querySelector('.score').textContent = `${arrow(s)} ${s}`;
+  el.querySelector('.score').className = `score ${cls(s)}`;
+  el.querySelector('.why').textContent = `Why: ${data.why}`;
+  el.querySelector('.note').textContent = `Note: ${data.note || '—'}`;
+}
+
+async function run(){
+  document.getElementById('updated').textContent = `Updated: ${nowStr()}`;
+  const [g,b,o] = await Promise.all([goldScore(), btcScore(), wtiScore()]);
+  renderCard('gold', g); renderCard('btc', b); renderCard('wti', o);
+}
+run();
+setInterval(run, 60_000);
+</script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+// src/main.tsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+
+import "./index.css";            // keep Tailwind/styles active
+
+// pages/components you already have
+import Landing from "./landing";
+import Dashboard from "./dashboard";
+import Login from "./login";
+import TrialPayment from "./trial-payment";
+import RawPayment from "./raw-payment";
+import Onboarding from "./onboarding";
+
+const root = document.getElementById("root")!;
+ReactDOM.createRoot(root).render(
+  <React.StrictMode>
+    <BrowserRouter>
+      <Routes>
+// src/main.tsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+
+import "./index.css";
+
+import Landing from "./landing";
+import Dashboard from "./dashboard";
+import Login from "./login";
+import TrialPayment from "./trial-payment";
+import RawPayment from "./raw-payment";
+import Onboarding from "./onboarding";
+
+const root = document.getElementById("root")!;
+ReactDOM.createRoot(root).render(
+  <BrowserRouter>
+    <Routes>
+      {/* Public landing */}
+      <Route path="/" element={<Landing />} />
+
+      {/* Auth / onboarding */}
+      <Route path="/login" element={<Login />} />
+      <Route path="/onboarding" element={<Onboarding />} />
+
+      {/* Payments — keep both paths so old links work */}
+      <Route path="/trial" element={<TrialPayment />} />
+      <Route path="/trial-payment" element={<TrialPayment />} />
+      <Route path="/pay" element={<RawPayment />} />
+      <Route path="/raw-payment" element={<RawPayment />} />
+
+      {/* App */}
+      <Route path="/dashboard" element={<Dashboard />} />
+
+      {/* Catch-all */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  </BrowserRouter>
+);

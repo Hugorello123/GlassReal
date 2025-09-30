@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Guru Predictions</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial; background:#0b0b0f; color:#eaeaea; }
+  .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+  h1 { font-size: 22px; margin: 0 0 14px; color: #fff; }
+  .grid { display:grid; gap:16px; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); }
+  .card { background: #101218; border: 1px solid #2a2f3a; border-radius: 14px; padding:14px; }
+  .row { display:flex; align-items:center; justify-content: space-between; gap:8px; }
+  .asset { font-weight:700; letter-spacing:.2px }
+  .score { font-variant-numeric: tabular-nums; font-weight:700; }
+  .up { color:#22c55e } .down { color:#ef4444 } .flat { color:#94a3b8 }
+  .why, .note, .ts { font-size: 12px; opacity:.8; margin-top:6px; }
+  .pill { font-size:11px; padding:2px 8px; border:1px solid #ffffff22; border-radius:999px; }
+  .muted { color:#a1a1aa }
+  a.back { font-size:12px; opacity:.8; text-decoration: none; border:1px solid #2a2f3a; padding:6px 10px; border-radius:999px }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row" style="margin-bottom:10px">
+      <h1>Guru Predictions</h1>
+      <a class="back" href="/" title="Back to dashboard">← Back</a>
+    </div>
+    <div class="row" style="margin-bottom:14px">
+      <div class="pill">Experimental signals — not investment advice</div>
+      <div class="pill muted" id="updated">—</div>
+    </div>
+
+    <div class="grid">
+      <div class="card" id="gold">
+        <div class="row"><div class="asset">Gold</div><div class="score flat">• 50</div></div>
+        <div class="why">Why: …</div>
+        <div class="note muted">Note: …</div>
+      </div>
+
+      <div class="card" id="btc">
+        <div class="row"><div class="asset">Bitcoin</div><div class="score flat">• 50</div></div>
+        <div class="why">Why: …</div>
+        <div class="note muted">Note: …</div>
+      </div>
+
+      <div class="card" id="wti">
+        <div class="row"><div class="asset">WTI Crude</div><div class="score flat">• 50</div></div>
+        <div class="why">Why: …</div>
+        <div class="note muted">Note: …</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const clamp = (n,min,max)=>Math.max(min,Math.min(max,n));
+const nowStr = ()=> new Date().toLocaleString();
+
+const kw = {
+  // shared helpers
+  geoUp:    ['missile','strike','drone','mobiliz','attack','escalat','sanction','blockade'],
+  geoDown:  ['ceasefire','peace','truce','de-escalat','talks'],
+  macroHot: ['hot cpi','sticky inflation','hawkish','surprise beat'],
+  macroCool:['dovish','cooling','disinflation','miss'],
+  // btc specific
+  btcUp:    ['etf inflow','spot etf','halving','adoption','upgrade','institutional'],
+  btcDown:  ['hack','exploit','outage','crackdown','sec sues','ban','delisting'],
+  // oil specific
+  oilUp:    ['outage','refinery fire','pipeline shut','opec cut','supply tight','sanction'],
+  oilDown:  ['demand slump','recession risk','ceasefire','inventory build']
+};
+
+async function j(url){ try{ const r=await fetch(url); if(!r.ok) throw 0; return await r.json(); }catch(_){ return null; } }
+const textify = a => (a?.title || a?.url || '').toLowerCase();
+
+function nudgeFromNews(articles, upWords=[], downWords=[], up=6, down=6){
+  const titles = (articles||[]).map(textify);
+  const has = (list)=> titles.some(t => list.some(w => t.includes(w)));
+  let s=0, reasons=[];
+  if(has(upWords)){ s+=up; reasons.push('escalation keywords'); }
+  if(has(downWords)){ s-=down; reasons.push('de-escalation keywords'); }
+  return {s,reasons};
+}
+
+function arrow(score){ if(score>55) return '▲'; if(score<45) return '▼'; return '•'; }
+function cls(score){ if(score>55) return 'up'; if(score<45) return 'down'; return 'flat'; }
+
+async function goldScore(){
+  let score=50, why=[];
+  const news = await j('/api/gdelt/gold');
+  const {s,reasons} = nudgeFromNews(news?.articles, [...kw.geoUp, ...kw.macroHot], [...kw.geoDown, ...kw.macroCool], 6, 6);
+  score += s; why = why.concat(reasons);
+
+  // Weekend: keep only news; (macro skipped by design)
+  const weekend = [0,6].includes(new Date().getDay());
+  const note = weekend ? 'Mkts closed — pre-market bias only' : 'News-only bias (macro light)';
+  return {score:clamp(score,0,100), why: why.length? why.join(', ') : 'No strong signal in the last hours', note};
+}
+
+async function btcScore(){
+  let score=50, why=[];
+  const cg = await j('/api/cg/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true');
+  const chg = cg?.bitcoin?.usd_24h_change;
+  if(typeof chg === 'number'){
+    if(chg > 0.5){ score += 8; why.push(`BTC +${chg.toFixed(2)}% 24h`); }
+    else if(chg < -0.5){ score -= 8; why.push(`BTC ${chg.toFixed(2)}% 24h`); }
+  }
+  const news = await j('/api/gdelt/btc');
+  const ups = ['etf','spot etf','inflow','adoption','upgrade','partnership'];
+  const downs = ['hack','exploit','crackdown','ban','lawsuit','sec sues'];
+  const {s,reasons} = nudgeFromNews(news?.articles, ups, downs, 4, 6);
+  score += s; why = why.concat(reasons);
+  return {score:clamp(score,0,100), why: why.length? why.join(', ') : 'Quiet tape', note:'24h change + headlines'};
+}
+
+async function wtiScore(){
+  let score=50, why=[];
+  const news = await j('/api/gdelt/wti');
+  const {s,reasons} = nudgeFromNews(news?.articles, kw.oilUp, kw.oilDown, 6, 6);
+  score += s; why = why.concat(reasons);
+  // If your /yq CL=F works later, add a small ±6 nudge on % move
+  return {score:clamp(score,0,100), why: why.length? why.join(', ') : 'No clear supply/demand catalyst', note:'Headlines bias'};
+}
+
+function renderCard(id, data){
+  const el = document.getElementById(id);
+  const s = clamp(Math.round(data.score),0,100);
+  el.querySelector('.score').textContent = `${arrow(s)} ${s}`;
+  el.querySelector('.score').className = `score ${cls(s)}`;
+  el.querySelector('.why').textContent = `Why: ${data.why}`;
+  el.querySelector('.note').textContent = `Note: ${data.note || '—'}`;
+}
+
+async function run(){
+  document.getElementById('updated').textContent = `Updated: ${nowStr()}`;
+  const [g,b,o] = await Promise.all([goldScore(), btcScore(), wtiScore()]);
+  renderCard('gold', g); renderCard('btc', b); renderCard('wti', o);
+}
+run();
+setInterval(run, 60_000);
+</script>
+<!-- Patch PRED-01: Scalpers Gauldron (30–90m) strip for BTC on predictions page -->
+<script>
+(function(){
+  if (document.getElementById('pred-sg')) return; // guard
+
+  function q(s){ return document.querySelector(s); }
+  function after(ref,node){ (ref&&ref.parentNode) ? ref.parentNode.insertBefore(node, ref.nextSibling) : document.body.appendChild(node); }
+
+  // --- tiny helpers ---
+  function ensureCSS(){
+    if (document.getElementById('pred-sg-css')) return;
+    var css = document.createElement('style'); css.id='pred-sg-css';
+    css.textContent =
+      '#pred-sg{margin:12px 0 8px;padding:8px 10px;border:1px solid rgba(255,255,255,0.10);border-radius:12px;background:rgba(255,255,255,0.04)}' +
+      '#pred-sg .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}' +
+      '#pred-sg .title{font-weight:700;font-size:13px;margin-right:6px}' +
+      '#pred-sg .pill{padding:4px 10px;border-radius:9999px;font-weight:700;font-size:12px;border:1px solid transparent}' +
+      '#pred-sg .long{color:#16a34a;background:rgba(34,197,94,0.12);border-color:rgba(34,197,94,0.35)}' +
+      '#pred-sg .short{color:#ef4444;background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.35)}' +
+      '#pred-sg .neutral{color:#94a3b8;background:rgba(148,163,184,0.12);border-color:rgba(148,163,184,0.35)}' +
+      '#pred-sg .notes{font-size:12px;opacity:.95;margin-left:4px}' +
+      '#pred-sg .notes .item{margin-right:10px;white-space:nowrap}';
+    document.head.appendChild(css);
+  }
+
+  function renderShell(){
+    ensureCSS();
+    var anchor = q('h1,h2,.page-title') || document.body.firstElementChild || document.body;
+    var box = document.createElement('div'); box.id='pred-sg';
+    var row = document.createElement('div'); row.className='row';
+    var title = document.createElement('div'); title.className='title'; title.textContent='Scalpers Gauldron (30–90m)';
+    var btc = document.createElement('div'); btc.id='pred-sg-btc'; btc.className='pill neutral'; btc.textContent='BTC: Neutral';
+    var notes = document.createElement('div'); notes.id='pred-sg-notes'; className='notes'; notes.className='notes';
+    row.appendChild(title); row.appendChild(btc); row.appendChild(notes);
+    box.appendChild(row);
+    after(anchor, box);
+    return { btc, notes };
+  }
+
+  // --- read signals by parsing /pro.html (same origin, no cors issues) ---
+  function parseFromPro(text, rx){ var m = text.match(rx); return m ? m[1] || m[2] : null; }
+  async function readSignals(){
+    try{
+      var t = await fetch('/pro.html', {cache:'no-store'}).then(r=>r.text());
+      var bias  = parseFloat(parseFromPro(t, /Bias[^()]*\(\s*(-?\d+(?:\.\d+)?)\s*\)/i)) || null;
+      var btcF  = (parseFromPro(t, /(BTC)\s+(inflow|outflow|flat)/i) || 'flat').toLowerCase();
+      var ethF  = (parseFromPro(t, /(ETH)\s+(inflow|outflow|flat)/i) || 'flat').toLowerCase();
+      var usdt  = (parseFromPro(t, /(USDT\(ETH\))\s+(mint|burn|flat)/i) || 'flat').toLowerCase();
+      var gold  = parseFloat(parseFromPro(t, /Gold\s*24h\s*([+\-]?\d+(?:\.\d+)?)%/i)) || null;
+      var heat  = parseInt(parseFromPro(t, /Headlines\/hr\s*(\d+)/i),10); if (isNaN(heat)) heat = null;
+      return { bias, btcF, ethF, usdt, gold, heat };
+    }catch(e){ return null; }
+  }
+
+  // --- scoring identical to Pro’s Gauldron so users get one story ---
+  function scoreNowcast(sig){
+    if (!sig) return {state:'Neutral', conf:0, notes:['offline']};
+    var s=0, notes=[];
+    if (sig.btcF==='outflow'){ s+=2; notes.push('BTC outflow (+2)'); }
+    else if (sig.btcF==='inflow'){ s-=2; notes.push('BTC inflow (−2)'); }
+    else notes.push('BTC flat (0)');
+    if (sig.ethF==='outflow'){ s+=1; notes.push('ETH outflow (+1)'); }
+    else if (sig.ethF==='inflow'){ s-=1; notes.push('ETH inflow (−1)'); }
+    if (sig.usdt==='mint'){ s+=1; notes.push('USDT mint (+1)'); }
+    else if (sig.usdt==='burn'){ s-=1; notes.push('USDT burn (−1)'); }
+    if (sig.gold!=null){
+      if (sig.gold>=0.7){ s+=1; notes.push('Gold ≥ +0.7% (+1)'); }
+      else if (sig.gold<=-0.7){ s-=1; notes.push('Gold ≤ −0.7% (−1)'); }
+    }
+    if (sig.heat!=null){
+      if (sig.heat>=10){ s-=1; notes.push('Headlines ≥10/hr (−1)'); }
+      else notes.push('Headlines '+sig.heat+'/hr');
+    }
+    if (sig.bias!=null){
+      if (sig.bias>=55){ s+=1; notes.push('Bias ≥55 (+1)'); }
+      else if (sig.bias<=45){ s-=1; notes.push('Bias ≤45 (−1)'); }
+    }
+    var state = (s>=2)?'Long':(s<=-2)?'Short':'Neutral';
+    var conf  = Math.min(4, Math.max(0, Math.abs(s)));
+    return {state, conf, notes};
+  }
+
+  function updateUI(ui, r){
+    ui.btc.className = 'pill ' + (r.state==='Long'?'long':r.state==='Short'?'short':'neutral');
+    ui.btc.textContent = 'BTC: ' + r.state + (r.conf?(' · conf '+r.conf+'/4'):'');
+    ui.notes.innerHTML = r.notes.map(function(n){ return '<span class="item">'+n+'</span>'; }).join('');
+  }
+
+  async function tick(ui){
+    var sig  = await readSignals();
+    var res  = scoreNowcast(sig);
+    updateUI(ui, res);
+  }
+
+  var ui = renderShell();
+  tick(ui);
+  setInterval(function(){ tick(ui); }, 60000);
+})();
+</script>
+<!-- Patch PRED-02: Add Gold & WTI mini-nowcasts to Predictions strip (reads /pro.html) -->
+<script>
+(function(){
+  // Require or create the strip from PRED-01
+  function q(s){ return document.querySelector(s); }
+  function after(ref,node){ (ref&&ref.parentNode)?ref.parentNode.insertBefore(node, ref.nextSibling):document.body.appendChild(node); }
+
+  function ensureShell(){
+    var box = q('#pred-sg');
+    if (!box){
+      var css = q('#pred-sg-css');
+      if (!css){
+        css=document.createElement('style'); css.id='pred-sg-css';
+        css.textContent =
+          '#pred-sg{margin:12px 0 8px;padding:8px 10px;border:1px solid rgba(255,255,255,0.10);border-radius:12px;background:rgba(255,255,255,0.04)}' +
+          '#pred-sg .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}' +
+          '#pred-sg .title{font-weight:700;font-size:13px;margin-right:6px}' +
+          '#pred-sg .pill{padding:4px 10px;border-radius:9999px;font-weight:700;font-size:12px;border:1px solid transparent}' +
+          '#pred-sg .long{color:#16a34a;background:rgba(34,197,94,0.12);border-color:rgba(34,197,94,0.35)}' +
+          '#pred-sg .short{color:#ef4444;background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.35)}' +
+          '#pred-sg .neutral{color:#94a3b8;background:rgba(148,163,184,0.12);border-color:rgba(148,163,184,0.35)}' +
+          '#pred-sg .notes{font-size:12px;opacity:.95;margin-left:4px}' +
+          '#pred-sg .notes .item{margin-right:10px;white-space:nowrap}';
+        document.head.appendChild(css);
+      }
+      var anchor = q('h1,h2,.page-title') || document.body.firstElementChild || document.body;
+      box = document.createElement('div'); box.id='pred-sg';
+      var row = document.createElement('div'); row.className='row';
+      var title = document.createElement('div'); title.className='title'; title.textContent='Scalpers Gauldron (30–90m)';
+      var btc = document.createElement('div'); btc.id='pred-sg-btc'; btc.className='pill neutral'; btc.textContent='BTC: Neutral';
+      var notes = document.createElement('div'); notes.id='pred-sg-notes'; notes.className='notes';
+      row.appendChild(title); row.appendChild(btc); row.appendChild(notes);
+      box.appendChild(row); after(anchor, box);
+    }
+    return box;
+  }
+
+  // Add Gold/WTI pills if missing
+  var box = ensureShell();
+  if (!q('#pred-sg-gold')){
+    var gold = document.createElement('div'); gold.id='pred-sg-gold'; gold.className='pill neutral'; gold.textContent='Gold: Neutral';
+    q('#pred-sg .row').appendChild(gold);
+  }
+  if (!q('#pred-sg-wti')){
+    var wti  = document.createElement('div'); wti.id='pred-sg-wti';  wti.className='pill neutral';  wti.textContent='WTI: Neutral';
+    q('#pred-sg .row').appendChild(wti);
+  }
+
+  // ---------- Pull signals from /pro.html ----------
+  function parse(text, rx){ var m=text.match(rx); return m? (m[1]||m[2]):null; }
+  function arrowScore(blockText, asset){ // sums ▲▲=+2, ▲=+1, ▼▼=-2, ▼=-1 for given asset in Watchdog row
+    var score=0, re=new RegExp(asset+'\\s*(▲▲|▲|↔|▼▼|▼)','g');
+    var m; while ((m=re.exec(blockText))){ var a=m[1]; if(a==='▲▲')score+=2; else if(a==='▲')score+=1; else if(a==='▼▼')score-=2; else if(a==='▼')score-=1; }
+    return score;
+  }
+  async function readFromPro(){
+    try{
+      var t = await fetch('/pro.html', {cache:'no-store'}).then(r=>r.text());
+      var bias  = parseFloat(parse(t, /Bias[^()]*\(\s*(-?\d+(?:\.\d+)?)\s*\)/i)) || null;
+      var btcF  = (parse(t, /(BTC)\s+(inflow|outflow|flat)/i) || 'flat').toLowerCase();
+      var ethF  = (parse(t, /(ETH)\s+(inflow|outflow|flat)/i) || 'flat').toLowerCase();
+      var usdt  = (parse(t, /(USDT\(ETH\))\s+(mint|burn|flat)/i) || 'flat').toLowerCase();
+      var gold24= parseFloat(parse(t, /Gold\s*24h\s*([+\-]?\d+(?:\.\d+)?)%/i)) || null;
+      var heat  = parseInt(parse(t, /Headlines\/hr\s*(\d+)/i),10); if (isNaN(heat)) heat=null;
+
+      // Watchdog block (if present)
+      var wdStart=t.indexOf('Sentimental Watchdog');
+      var wdText = wdStart>=0 ? t.slice(wdStart, wdStart+1200) : ''; // small slice is enough
+      var wdGold = arrowScore(wdText, 'Gold');
+      var wdOil  = arrowScore(wdText, 'Oil');
+      var wdUSD  = arrowScore(wdText, 'USD');
+
+      return { bias, btcF, ethF, usdt, gold24, heat, wdGold, wdOil, wdUSD };
+    }catch(e){ return null; }
+  }
+
+  // ---------- BTC score (reuse PRED-01 logic if present) ----------
+  function scoreBTC(sig){
+    if (!sig) return {state:'Neutral', conf:0, title:'offline'};
+    var s=0, notes=[];
+    if (sig.btcF==='outflow'){ s+=2; notes.push('BTC outflow (+2)'); }
+    else if (sig.btcF==='inflow'){ s-=2; notes.push('BTC inflow (−2)'); }
+    if (sig.ethF==='outflow'){ s+=1; notes.push('ETH outflow (+1)'); }
+    else if (sig.ethF==='inflow'){ s-=1; notes.push('ETH inflow (−1)'); }
+    if (sig.usdt==='mint'){ s+=1; notes.push('USDT mint (+1)'); }
+    else if (sig.usdt==='burn'){ s-=1; notes.push('USDT burn (−1)'); }
+    if (sig.gold24!=null){
+      if (sig.gold24>=0.7){ s+=1; notes.push('Gold ≥ +0.7% (+1)'); }
+      else if (sig.gold24<=-0.7){ s-=1; notes.push('Gold ≤ −0.7% (−1)'); }
+    }
+    if (sig.heat!=null && sig.heat>=10){ s-=1; notes.push('Headlines ≥10/hr (−1)'); }
+    if (sig.bias!=null){ if(sig.bias>=55){ s+=1; notes.push('Bias ≥55 (+1)'); } else if(sig.bias<=45){ s-=1; notes.push('Bias ≤45 (−1)'); } }
+    var state=(s>=2)?'Long':(s<=-2)?'Short':'Neutral', conf=Math.min(4, Math.max(0, Math.abs(s)));
+    return {state, conf, title:notes.join(' · ')||'—'};
+  }
+
+  // ---------- Gold score (deterministic, explainable) ----------
+  function scoreGold(sig){
+    if (!sig) return {state:'Neutral', conf:0, title:'offline'};
+    var s=0, why=[];
+    // Watchdog themes (direct arrows for Gold)
+    if (sig.wdGold){ s+=Math.max(-2, Math.min(2, sig.wdGold)); if(sig.wdGold>0)why.push('Themes ↑ Gold'); if(sig.wdGold<0)why.push('Themes ↓ Gold'); }
+    // Risk regime proxy: risk-off tends to bid gold; risk-on weighs
+    if (sig.bias!=null){ if(sig.bias<=45){ s+=1; why.push('Risk-off (+1)'); } else if(sig.bias>=55){ s-=1; why.push('Risk-on (−1)'); } }
+    // USD proxy via Watchdog (Dollar surge)
+    if (sig.wdUSD){ if(sig.wdUSD>0){ s-=1; why.push('USD ↑ (−1)'); } else if(sig.wdUSD<0){ s+=1; why.push('USD ↓ (+1)'); } }
+    // Headlines very hot → whipsaw risk
+    if (sig.heat!=null && sig.heat>=10){ s-=1; why.push('Heat ≥10/hr (−1)'); }
+    var state=(s>=2)?'Long':(s<=-2)?'Short':'Neutral', conf=Math.min(4, Math.max(0, Math.abs(s)));
+    return {state, conf, title: (why.join(' · ')||'—')};
+  }
+
+  // ---------- WTI score (deterministic, explainable) ----------
+  function scoreWTI(sig){
+    if (!sig) return {state:'Neutral', conf:0, title:'offline'};
+    var s=0, why=[];
+    // Watchdog themes for Oil
+    if (sig.wdOil){ s+=Math.max(-2, Math.min(2, sig.wdOil)); if(sig.wdOil>0)why.push('Themes ↑ Oil'); if(sig.wdOil<0)why.push('Themes ↓ Oil'); }
+    // Risk regime: shocks/sanctions (risk-off) often bid oil; risk-on weighs
+    if (sig.bias!=null){ if(sig.bias<=45){ s+=1; why.push('Risk-off (+1)'); } else if(sig.bias>=55){ s-=1; why.push('Risk-on (−1)'); } }
+    // USD proxy via Watchdog (Dollar surge drags oil)
+    if (sig.wdUSD){ if(sig.wdUSD>0){ s-=1; why.push('USD ↑ (−1)'); } else if(sig.wdUSD<0){ s+=1; why.push('USD ↓ (+1)'); } }
+    if (sig.heat!=null && sig.heat>=10){ s-=1; why.push('Heat ≥10/hr (−1)'); }
+    var state=(s>=2)?'Long':(s<=-2)?'Short':'Neutral', conf=Math.min(4, Math.max(0, Math.abs(s)));
+    return {state, conf, title:(why.join(' · ')||'—')};
+  }
+
+  function paint(el, res, label){
+    el.className='pill ' + (res.state==='Long'?'long':res.state==='Short'?'short':'neutral');
+    el.textContent = label+': ' + res.state + (res.conf?(' · conf '+res.conf+'/4'):'');
+    el.title = res.title;
+  }
+
+  async function tick(){
+    var sig = await readFromPro(); if (!sig) return;
+    // BTC: if PRED-01 is present it’s already updating; we still keep it in sync here.
+    paint(q('#pred-sg-btc'),  scoreBTC(sig),  'BTC');
+    paint(q('#pred-sg-gold'), scoreGold(sig), 'Gold');
+    paint(q('#pred-sg-wti'),  scoreWTI(sig),  'WTI');
+    // Optional: a tiny note preview (don’t spam UI)
+    var notes = q('#pred-sg-notes');
+    if (notes && !notes.dataset.brief){
+      notes.dataset.brief='1';
+      notes.textContent = 'Hover pills for reasons • deterministic; updates every 60s.';
+    }
+  }
+
+  tick();
+  setInterval(tick, 60000);
+})();
+</script>
+<!-- Patch PRED-03: Per-card Why & Triggers + 30d receipts (safe, reads /pro.html; /api/edge/summary optional) -->
+<script>
+(function(){
+  if (document.getElementById('pred03-hook')) return; // guard
+  var HOOK = document.createElement('div'); HOOK.id = 'pred03-hook'; document.body.appendChild(HOOK);
+
+  // ---------- CSS ----------
+  (function ensureCSS(){
+    if (document.getElementById('pred03-css')) return;
+    var css = document.createElement('style'); css.id='pred03-css';
+    css.textContent =
+      '.p3-why{margin-top:8px;padding:8px 10px;border:1px solid rgba(255,255,255,0.10);border-radius:10px;background:rgba(255,255,255,0.04);font-size:12px}' +
+      '.p3-why b{opacity:.95}' +
+      '.p3-receipts{float:right;font-size:12px;padding:2px 8px;border-radius:9999px;border:1px solid rgba(148,163,184,0.35);color:#cbd5e1;background:rgba(148,163,184,0.10)}' +
+      '.p3-receipts.good{color:#16a34a;border-color:rgba(34,197,94,0.35);background:rgba(34,197,94,0.12)}' +
+      '.p3-receipts.poor{color:#ef4444;border-color:rgba(239,68,68,0.35);background:rgba(239,68,68,0.12)}' +
+      '.p3-line{margin:2px 0;opacity:.95}' +
+      '.p3-muted{opacity:.75}';
+    document.head.appendChild(css);
+  })();
+
+  // ---------- helpers ----------
+  function q(s,root){ return (root||document).querySelector(s); }
+  function qa(s,root){ return Array.prototype.slice.call((root||document).querySelectorAll(s)); }
+  function after(ref,node){ if(ref&&ref.parentNode){ ref.parentNode.insertBefore(node, ref.nextSibling); } }
+  function parse(text, rx){ var m=text.match(rx); return m? (m[1]||m[2]):null; }
+  function toPct(x){ return (Math.round(x*1000)/10).toFixed(1) + '%'; }
+  function withTimeout(run, ms){ var c=new AbortController(), t=setTimeout(function(){c.abort();}, ms); return run(c).finally(function(){clearTimeout(t);}); }
+
+  // ---------- read signals from /pro.html ----------
+  async function readSignals(){
+    try{
+      var t = await fetch('/pro.html', {cache:'no-store'}).then(r=>r.text());
+      var bias  = parseFloat(parse(t, /Bias[^()]*\(\s*(-?\d+(?:\.\d+)?)\s*\)/i)) || null;
+      var btcF  = (parse(t, /(BTC)\s+(inflow|outflow|flat)/i) || 'flat').toLowerCase();
+      var ethF  = (parse(t, /(ETH)\s+(inflow|outflow|flat)/i) || 'flat').toLowerCase();
+      var usdt  = (parse(t, /(USDT\(ETH\))\s+(mint|burn|flat)/i) || 'flat').toLowerCase();
+      var gold24= parseFloat(parse(t, /Gold\s*24h\s*([+\-]?\d+(?:\.\d+)?)%/i)) || null;
+      var heat  = parseInt(parse(t, /Headlines\/hr\s*(\d+)/i),10); if (isNaN(heat)) heat=null;
+
+      // Watchdog slice (if present) for Gold/Oil/USD arrows
+      var wdStart=t.indexOf('Sentimental Watchdog');
+      var wdText = wdStart>=0 ? t.slice(wdStart, wdStart+1200) : '';
+      function arrowScore(asset){
+        var s=0, re=new RegExp(asset+'\\s*(▲▲|▲|↔|▼▼|▼)','g'); var m;
+        while((m=re.exec(wdText))){ var a=m[1]; if(a==='▲▲')s+=2; else if(a==='▲')s+=1; else if(a==='▼▼')s-=2; else if(a==='▼')s-=1; }
+        return s;
+      }
+      return { bias, btcF, ethF, usdt, gold24, heat, wdGold:arrowScore('Gold'), wdOil:arrowScore('Oil'), wdUSD:arrowScore('USD') };
+    }catch(e){ return null; }
+  }
+
+  // ---------- scoring texts (deterministic, mirrors earlier patches) ----------
+  function whyTriggersBTC(sig){
+    var why=[], flipsLong=['BTC outflow','USDT mint','Gold ≥ +0.7%'], flipsShort=['BTC inflow','USDT burn','Gold ≤ −0.7%'];
+    if (!sig) return {why:['offline'], flipsLong, flipsShort};
+    if (sig.btcF==='outflow') why.push('BTC outflow');
+    else if (sig.btcF==='inflow') why.push('BTC inflow');
+    else why.push('BTC flat');
+    if (sig.ethF==='outflow') why.push('ETH outflow'); else if (sig.ethF==='inflow') why.push('ETH inflow');
+    if (sig.usdt==='mint') why.push('USDT mint'); else if (sig.usdt==='burn') why.push('USDT burn');
+    if (sig.gold24!=null){ if(sig.gold24>=0.7) why.push('Gold +≥0.7%'); else if(sig.gold24<=-0.7) why.push('Gold −≥0.7%'); }
+    if (sig.heat!=null){ if(sig.heat>=10) why.push('Heat ≥10/hr'); else why.push('Heat '+sig.heat+'/hr'); }
+    if (sig.bias!=null){ if(sig.bias>=55) why.push('Bias ≥55'); else if(sig.bias<=45) why.push('Bias ≤45'); }
+    return { why, flipsLong, flipsShort };
+  }
+
+  function whyTriggersGold(sig){
+    var why=[], flipsLong=['Risk-off','USD ↓','Themes ↑ Gold'], flipsShort=['Risk-on','USD ↑','Themes ↓ Gold'];
+    if (!sig) return {why:['offline'], flipsLong, flipsShort};
+    if (sig.wdGold>0) why.push('Themes ↑ Gold'); else if (sig.wdGold<0) why.push('Themes ↓ Gold'); else why.push('Themes flat');
+    if (sig.bias!=null){ if(sig.bias<=45) why.push('Risk-off'); else if(sig.bias>=55) why.push('Risk-on'); }
+    if (sig.wdUSD>0) why.push('USD ↑'); else if (sig.wdUSD<0) why.push('USD ↓');
+    if (sig.heat!=null && sig.heat>=10) why.push('Heat ≥10/hr');
+    return { why, flipsLong, flipsShort };
+  }
+
+  function whyTriggersWTI(sig){
+    var why=[], flipsLong=['Risk-off/supply risk','USD ↓','Themes ↑ Oil'], flipsShort=['Risk-on','USD ↑','Themes ↓ Oil'];
+    if (!sig) return {why:['offline'], flipsLong, flipsShort};
+    if (sig.wdOil>0) why.push('Themes ↑ Oil'); else if (sig.wdOil<0) why.push('Themes ↓ Oil'); else why.push('Themes flat');
+    if (sig.bias!=null){ if(sig.bias<=45) why.push('Risk-off'); else if(sig.bias>=55) why.push('Risk-on'); }
+    if (sig.wdUSD>0) why.push('USD ↑'); else if (sig.wdUSD<0) why.push('USD ↓');
+    if (sig.heat!=null && sig.heat>=10) why.push('Heat ≥10/hr');
+    return { why, flipsLong, flipsShort };
+  }
+
+  // ---------- receipts (optional) ----------
+  async function fetchReceipts(asset){
+    try{
+      var url = '/api/edge/summary?asset='+encodeURIComponent(asset)+'&window=30d';
+      var r = await withTimeout(s=>fetch(url, {method:'GET', cache:'no-store', signal:s.signal}), 2500);
+      if (!r.ok) return null;
+      var j = await r.json();
+      // Accept a few shapes
+      var win = j.win_rate_30d || j.win_rate || (j.stats && j.stats.win_rate);
+      var avg = j.avg_move_pct_30d || j.avg_move_pct || (j.stats && j.stats.avg_move_pct);
+      if (win==null || avg==null) return null;
+      return { win: Number(win), avg: Number(avg) };
+    }catch(e){ return null; }
+  }
+
+  function receiptsChip(el, rec){
+    if (!el) return;
+    if (!rec){ el.className='p3-receipts'; el.textContent='30d: collecting…'; return; }
+    var winPct = Math.round((rec.win*100)); // expecting 0.0..1.0
+    var avgPct = (Math.round(rec.avg*1000)/10); // already in pct
+    el.textContent = '30d: ' + winPct + '% • ' + avgPct.toFixed(1) + '% avg';
+    el.className = 'p3-receipts ' + (winPct>=55 ? 'good' : winPct<=45 ? 'poor' : '');
+  }
+
+  // ---------- card wiring ----------
+  function findCard(label){
+    // Heuristic: pick the first block that contains the asset label and a "Why:" line.
+    var nodes = qa('div,section,article');
+    for (var i=0;i<nodes.length;i++){
+      var t = (nodes[i].textContent||'').trim();
+      if (t.match(new RegExp('\\b'+label+'\\b','i')) && /Why:/i.test(t)) return nodes[i];
+    }
+    return null;
+  }
+
+  function ensureSections(card, idBase){
+    if (!card) return null;
+    if (q('.p3-receipts', card)) return { rec:q('.p3-receipts', card), why:q('.p3-why', card) };
+    // header chip
+    var rec = document.createElement('span'); rec.className='p3-receipts'; rec.textContent='30d: collecting…';
+    // try to place near the first heading inside card; else prepend
+    var hdr = q('h1,h2,h3', card) || card.firstElementChild;
+    if (hdr && hdr.appendChild) hdr.appendChild(rec); else card.insertBefore(rec, card.firstChild);
+
+    // why/triggers block at bottom of card
+    var why = document.createElement('div'); why.className='p3-why'; why.id=idBase+'-why';
+    var p1 = document.createElement('div'); p1.className='p3-line';
+    var p2 = document.createElement('div'); p2.className='p3-line p3-muted';
+    why.appendChild(p1); why.appendChild(p2);
+    card.appendChild(why);
+    return { rec, why };
+  }
+
+  function renderWhy(blk, asset, why, flipsLong, flipsShort){
+    if (!blk) return;
+    var top = blk.firstElementChild, bot = blk.lastElementChild;
+    top.innerHTML = '<b>Why:</b> ' + (why && why.length ? why.join(' · ') : '—');
+    bot.innerHTML = '<b>Triggers:</b> Flip long if ' + flipsLong.join(', ') + ' · Flip short if ' + flipsShort.join(', ') + '.';
+  }
+
+  async function tick(){
+    var sig = await readSignals(); if (!sig) return;
+
+    // BTC card
+    var cardB = findCard('Bitcoin') || findCard('BTC');
+    var secB = ensureSections(cardB, 'p3-btc');
+    if (secB){
+      var wB = whyTriggersBTC(sig);
+      renderWhy(secB.why, 'BTC', wB.why, wB.flipsLong, wB.flipsShort);
+      receiptsChip(secB.rec, await fetchReceipts('BTC'));
+    }
+
+    // Gold card
+    var cardG = findCard('Gold');
+    var secG = ensureSections(cardG, 'p3-gold');
+    if (secG){
+      var wG = whyTriggersGold(sig);
+      renderWhy(secG.why, 'Gold', wG.why, wG.flipsLong, wG.flipsShort);
+      receiptsChip(secG.rec, await fetchReceipts('Gold'));
+    }
+
+    // WTI card
+    var cardW = findCard('WTI') || findCard('WTI Crude') || findCard('Crude');
+    var secW = ensureSections(cardW, 'p3-wti');
+    if (secW){
+      var wW = whyTriggersWTI(sig);
+      renderWhy(secW.why, 'WTI', wW.why, wW.flipsLong, wW.flipsShort);
+      receiptsChip(secW.rec, await fetchReceipts('WTI'));
+    }
+  }
+
+  tick();
+  setInterval(tick, 60000); // refresh once a minute
+})();
+</script>
+
+</body>
+</html>

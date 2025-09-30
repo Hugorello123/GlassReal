@@ -1,0 +1,9 @@
+import React from "react";
+export default function Onboarding() {
+  return (
+    <main className="min-h-screen bg-black text-white p-6">
+      <h1 className="text-3xl font-bold mb-4">Onboarding</h1>
+      <p>Welcome! We’ll collect your details and activate your access here.</p>
+    </main>
+  );
+}

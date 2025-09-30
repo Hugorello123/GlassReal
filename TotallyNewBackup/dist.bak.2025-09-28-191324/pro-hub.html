@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>GlassTrade • Pro Hub</title>
+<meta name="description" content="Jump to Signals, Pro Lite, Watchdog, Indices, Legacy Pro, and Guru." />
+<style>
+:root{--bg:#0b0e13;--bg2:#0f1420;--panel:#121829;--text:#e8eef9;--muted:#a8b3c7;--line:#1e2740;--accent:#6fd3ff;--ok:#3ddc97;--warn:#f5c451}
+@media (prefers-color-scheme: light){
+  :root{--bg:#f7fbff;--bg2:#eef5ff;--panel:#ffffff;--text:#0b1220;--muted:#5b6b84;--line:#e5ecf6;--accent:#146ce6;--ok:#159c6e;--warn:#b98000}
+}
+*{box-sizing:border-box} html,body{height:100%}
+body{
+  margin:0; color:var(--text);
+  background:
+    radial-gradient(1200px 800px at 100% -10%, rgba(111,211,255,.08), transparent 60%),
+    radial-gradient(1200px 800px at -20% 110%, rgba(20,108,230,.08), transparent 60%),
+    linear-gradient(0deg, var(--bg2), var(--bg));
+  font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+}
+.wrap{max-width:1100px;margin:0 auto;padding:24px}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:6px 0 22px}
+.title{font-weight:800;letter-spacing:.2px;margin:0;font-size:clamp(20px,2.4vw,28px);
+  background:linear-gradient(90deg,#22d3ee,#3b82f6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.subtitle{margin:6px 0 0;color:var(--muted);font-size:14px;max-width:720px}
+.header-actions{display:flex;gap:10px;align-items:center}
+.back{color:var(--muted);text-decoration:none;border:1px solid var(--line);padding:8px 12px;border-radius:10px}
+.back:hover{color:var(--text);border-color:var(--accent)}
+.alpha{font-size:12px;color:var(--muted);text-decoration:none;opacity:.85}
+.alpha:hover{color:var(--text);opacity:1}
+.grid{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.card{
+  display:flex;flex-direction:column;justify-content:space-between;
+  background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.02)), var(--panel);
+  border:1px solid var(--line);border-radius:16px;padding:18px;text-decoration:none;color:inherit;
+  transition:transform .06s ease, box-shadow .06s ease, border-color .12s ease;box-shadow:0 6px 20px rgba(0,0,0,.12)
+}
+.card:hover{transform:translateY(-2px);border-color:rgba(111,211,255,.5);box-shadow:0 10px 28px rgba(0,0,0,.18)}
+.row{display:flex;align-items:center;gap:12px}
+.icon{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;
+  background:linear-gradient(145deg, rgba(111,211,255,.18), rgba(20,108,230,.12));border:1px solid var(--line)}
+.card h3{margin:2px 0 2px;font-size:18px}
+.desc{color:var(--muted);font-size:14px;margin:6px 0 14px}
+.foot{display:flex;align-items:center;gap:10px;margin-top:auto}
+.chip{font-size:12px;padding:4px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.chip.ok{color:var(--ok)} .chip.warn{color:var(--warn)} .chev{margin-left:auto;opacity:.8}
+</style>
+  <style>/* PRO-HUB DARK PATCH */
+  :root{color-scheme:dark light}
+  body{margin:0;background:#0b1220;color:#e5e7eb;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  .wrap{max-width:1100px;margin:0 auto;padding:20px}
+  h1{margin:0 0 8px;font-size:22px;background:linear-gradient(90deg,#22d3ee,#60a5fa);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:800}
+  .meta{color:#9fb3c8;font-size:12px;margin:0 0 14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+  .card{display:block;background:#0f172a;border:1px solid #1f2a44;border-radius:16px;padding:16px;text-decoration:none;color:inherit;transition:transform .15s,background .15s,border-color .15s}
+  .card:hover{transform:translateY(-2px);border-color:#334a75;background:#0c1222}
+  .card h3{margin:0 0 6px;font-size:16px;font-weight:700;color:#eaf2ff}
+  .card p{margin:0;color:#9fb3c8;font-size:13px}
+  hr{border:0;border-top:1px solid #1f2a44;margin:16px 0}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1 class="title">Pro Hub</h1>
+        <p class="subtitle">Jump quickly to Signals, Pro Lite, Watchdog, Indices, Legacy Pro, and Guru.</p>
+      </div>
+      <div class="header-actions">
+        <a class="alpha" href="/alpha/" rel="nofollow">Alpha ↗</a>
+        <a class="back" href="/">← Back to Home</a>
+      </div>
+    </header>
+
+    <main class="grid" aria-label="Pro Hub cards">
+      <!-- Signals & Targets -->
+      <a class="card" href="/signals.html">
+        <div>
+          <div class="row">
+            <div class="icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5" opacity=".9"/>
+                <circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="1.5" opacity=".8"/>
+                <circle cx="12" cy="12" r="2" fill="currentColor" />
+              </svg>
+            </div>
+            <h3>Signals &amp; Targets</h3>
+          </div>
+          <p class="desc">Bias, drivers, windows &amp; levels in one clean list.</p>
+        </div>
+        <div class="foot"><span class="chip ok">Live</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+
+      <!-- Pro (Lite) -->
+      <a class="card" href="/pro-lite.html">
+        <div>
+          <div class="row">
+            <div class="icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 13a8 8 0 1 1 16 0" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <path d="M12 13l5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3>Pro (Lite)</h3>
+          </div>
+          <p class="desc">Fast overview with the essentials.</p>
+        </div>
+        <div class="foot"><span class="chip ok">Live</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+
+      <!-- Watchdog -->
+      <a class="card" href="/watchdog.html">
+        <div>
+          <div class="row">
+            <div class="icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <circle cx="12" cy="12" r="3" fill="currentColor"/>
+              </svg>
+            </div>
+            <h3>Watchdog</h3>
+          </div>
+          <p class="desc">Headlines, pace, breadth &amp; VIX context.</p>
+        </div>
+        <div class="foot"><span class="chip warn">Evolving</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+
+      <!-- Indices -->
+      <a class="card" href="/indices.html">
+        <div>
+          <div class="row">
+            <div class="icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 19V5" stroke="currentColor" stroke-width="1.5" opacity=".7"/>
+                <path d="M4 15l5-5 3 3 6-6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h3>Indices</h3>
+          </div>
+          <p class="desc">US Tech 100 and friends—quick markers.</p>
+        </div>
+        <div class="foot"><span class="chip">Snapshot</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+
+      <!-- Guru -->
+      <a class="card" href="/guru.html">
+        <div>
+          <div class="row">
+            <div class="icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M9 15l3-6 3 6" stroke="currentColor" stroke-width="1.5" fill="none"/>
+              </svg>
+            </div>
+            <h3>Guru</h3>
+          </div>
+          <p class="desc">Sentiment &amp; voice hooks (preview).</p>
+        </div>
+        <div class="foot"><span class="chip warn">Preview</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+
+      <!-- Legacy Pro -->
+      <a class="card" href="/pro.html">
+        <div>
+          <div class="row">
+            <div class="icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3l9 5-9 5-9-5 9-5Z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <path d="M21 13l-9 5-9-5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+              </svg>
+            </div>
+            <h3>Legacy Pro</h3>
+          </div>
+          <p class="desc">Older full board (may redirect).</p>
+        </div>
+        <div class="foot"><span class="chip">Reference</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+             <!-- About -->
+      <a class="card" href="/about.html">
+        <div>
+          <div class="row">
+            <div class="icon" aria-hidden="true">
+              <!-- user/info icon -->
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M4 20c2-4 6-6 8-6s6 2 8 6" stroke="currentColor" stroke-width="1.5" fill="none"/>
+              </svg>
+            </div>
+            <h3>About</h3>
+          </div>
+          <p class="desc">What we’re building and why—overview for users &amp; investors.</p>
+        </div>
+        <div class="foot"><span class="chip">Snapshot</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+           <!-- About -->
+          <!-- Predictions -->
+      <a class="card" href="/predictions.html">
+        <div>
+          <div class="row">
+            <h3>Predictions</h3>
+          </div>
+          <p class="desc">Upcoming calls & outcome tracking.</p>
+        </div>
+        <div class="foot"><span class="chip">Snapshot</span><span class="chev" aria-hidden="true">›</span></div>
+      </a>
+
+    </main>
+  </div>
+</body>
+</html>

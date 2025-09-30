@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GlassTrade</title>
+    <script type="module" crossorigin src="/assets/index-CTmTOMCs.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-ClDIOLUR.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+  <p style="text-align:center;margin:16px;"><a href="/pro-hub.html" target="_blank" rel="noopener noreferrer" rel="external" onclick="event.stopImmediatePropagation(); window.location=this.href; return false;" style="padding:10px 14px;border:1px solid #ccc;border-radius:8px;text-decoration:none">Go to Pro Hub →</a></p>
+
+</html>

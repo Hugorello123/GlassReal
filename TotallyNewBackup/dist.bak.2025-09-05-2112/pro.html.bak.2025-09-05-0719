@@ -1,0 +1,1530 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GlassTrade • Pro Dashboard</title>
+<style>
+  :root{
+    --bg:#0b0e13; --panel:#141925; --panel2:#0f1420; --text:#e8eef9; --muted:#98a2b3;
+    --line:#20283a; --accent:#56c8ff; --good:#9ae6b4; --bad:#fca5a5; --amber:#fbbf24;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:linear-gradient(160deg,var(--bg),#0d121a);color:var(--text);
+    font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue","Noto Sans",sans-serif
+  }
+  a{color:#7dd3fc;text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:1200px;margin:0 auto;padding:24px}
+  .row{display:grid;gap:16px}
+  @media(min-width:900px){
+    .row-3{grid-template-columns:1fr 1fr 1fr}
+    .row-2{grid-template-columns:1.2fr 1fr}
+  }
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .card2{background:var(--panel2);border:1px dashed var(--line);border-radius:14px;padding:16px}
+  .h1{font-size:28px;font-weight:800;letter-spacing:.3px}
+  .h2{font-size:16px;font-weight:700;margin-bottom:8px}
+  .muted{color:var(--muted)}
+  .pill{display:inline-block;border-radius:999px;padding:2px 8px;font-size:12px;border:1px solid var(--line);background:#0e1422}
+  .bias{font-weight:800}
+  .bias.bullish{color:var(--good); box-shadow:0 0 0 1px rgba(16,185,129,.35), 0 0 12px rgba(16,185,129,.10)}
+  .bias.bearish{color:var(--bad);  box-shadow:0 0 0 1px rgba(239,68,68,.35),  0 0 12px rgba(239,68,68,.10)}
+  .bias.neutral{color:#cbd5e1;     box-shadow:0 0 0 1px rgba(148,163,184,.35), 0 0 8px rgba(148,163,184,.06)}
+  .grid{display:grid;gap:12px}
+  @media(min-width:700px){.grid-2{grid-template-columns:1fr 1fr}}
+  .imgbox img{width:100%;border-radius:10px;border:1px solid var(--line);display:block}
+  .foot{margin-top:18px;text-align:center;color:#a3aab7;font-size:12px}
+  .bar{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);color:#fde68a;border-radius:10px;padding:10px 12px}
+
+  /* flow pills */
+  .fpills{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 14px}
+  .fpill{display:inline-flex;gap:8px;align-items:center;padding:4px 10px;border-radius:999px;
+         background:#0e1422;border:1px solid var(--line);font-size:12px}
+  .fmono{font-variant-numeric:tabular-nums;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .fmuted{opacity:.75}
+  .fok{color:var(--good)}
+  .fbad{color:var(--bad)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="row" style="align-items:center;margin-bottom:12px">
+      <div class="h1" style="background:linear-gradient(90deg,#67e8f9,#34d399);-webkit-background-clip:text;background-clip:text;color:transparent">
+        Pro Dashboard
+      </div>
+      <div style="justify-self:end;display:flex;gap:6px;flex-wrap:wrap">
+        <a href="/" class="pill">← Main</a>
+        <a href="/predictions.html" class="pill">Predictions</a>
+      </div>
+    </div>
+
+    <span id="upd" class="pill" style="opacity:.8">Updated: …</span>
+
+    <!-- live flow badges -->
+    <div id="flowPills" class="fpills">
+      <span class="fpill fmuted">flow loading…</span>
+    </div>
+
+    <!-- Session Bias -->
+    <div class="row row-2" style="margin-bottom:16px">
+      <div class="card" id="bias-card">
+        <div class="h2">
+          Session Bias
+          <span id="weekend" class="pill" style="margin-left:8px;display:none">weekend lean</span>
+        </div>
+        Bias:
+        <span id="bias" class="pill bias neutral">neutral</span>
+        <span class="muted">(<span id="score">50</span>)</span>
+         <!-- What this implies (deterministic, no LLM) -->
+<p id="bias-implication" style="margin-top:4px;font-size:12px;opacity:0.8">Loading implication…</p>
+<script>
+(function () {
+  // Try common selectors to find the existing Bias number on the page.
+  function readBias() {
+    const cands = [
+      document.querySelector('#bias-score'),
+      document.querySelector('.bias-score'),
+      document.querySelector('[data-bias]'),
+      document.querySelector('#biasValue')
+    ].filter(Boolean);
+
+    for (const el of cands) {
+      let txt = el.getAttribute('data-bias') || el.textContent || '';
+      // Keep only digits, dot, minus; also handle "Bias: 57" formats.
+      txt = String(txt).replace(/[^\d.\-:]/g, '');
+      // If format was like "Bias:57", take the last numeric part.
+      if (txt.includes(':')) txt = txt.split(':').pop();
+      const n = parseFloat(txt);
+      if (!Number.isNaN(n)) return n;
+    }
+    return NaN;
+  }
+
+  // Deterministic mapping from Bias -> implication text.
+  // 50 = neutral baseline. Buckets are conservative to avoid flip-flopping.
+  function implication(b) {
+    if (Number.isNaN(b)) return 'Awaiting bias…';
+    if (b <= 35) return 'Risk-off: favor shorts / safe-haven posture; gold support likely.';
+    if (b <= 45) return 'Leaning risk-off: fade strength; tighten stops on longs.';
+    if (b < 55)  return 'Neutral: range-trade; wait for BTC/ETH inflow confirmation.';
+    if (b < 65)  return 'Leaning risk-on: buy dips; keep position sizes modest.';
+    if (b < 75)  return 'Risk-on: momentum entries OK; trail stops aggressively.';
+    return 'Strong risk-on: breakout conditions; scale in only with flow confirmation.';
+  }
+
+  const out = document.getElementById('bias-implication');
+  let tries = 0;
+
+  function tick() {
+    const b = readBias();
+    out.textContent = implication(b);
+    // If Bias is set asynchronously, poll briefly without hammering.
+    if (Number.isNaN(b) && tries++ < 40) setTimeout(tick, 250);
+  }
+  tick();
+})();
+</script>
+
+        <div class="muted" style="margin-top:6px">
+          Drivers:
+          BTC 24h <span id="btc">n/a</span> •
+          Gold 24h <span id="gold">n/a</span> •
+          Headlines/hr <span id="heat">0</span>
+        </div>
+        <div class="muted" id="why" style="margin-top:4px"></div>
+
+        <div class="bar" style="margin-top:10px">
+          Read: BTC falling = mild tailwind; BTC rising = mild headwind. Gold ±0.7% confirms.
+          Watch DXY and headline heat (≥3/hr).
+        </div>
+      </div>
+
+      <!-- Event Playbook -->
+      <div class="card2">
+        <div class="h2">Event Playbook</div>
+        <div class="muted">
+          Risk-on (tariff relief, strong USD/yields) → bearish gold.
+          Risk-off (sanctions, shocks) → bullish gold. Window: 15–60m.
+        </div>
+        <div class="foot">Legend: 50 neutral; 55–64 mild; ≥65 strong.</div>
+      </div>
+    </div>
+
+    <!-- Analogs -->
+    <div class="card">
+      <div class="h2">Analog Scenarios (snapshots)</div>
+      <div id="analogs" class="grid grid-2">
+        <div class="muted">
+          Looking for <code>/analogs/manifest.json</code>… Drop images in <code>public/analogs/</code>
+          and create a manifest file to auto-populate.
+        </div>
+      </div>
+      <div class="foot">Tip: Use clear titles and short notes (e.g., “Aug 2019 Yuan deval — Gold +3%/24h”).</div>
+    </div>
+
+    <div class="foot">GlassTrade • experimental tools — not investment advice.</div>
+  </div>
+
+<script>
+(function(){
+  const $ = (id)=>document.getElementById(id);
+  const biasEl=$("bias"), scoreEl=$("score"), btcEl=$("btc"), goldEl=$("gold"), heatEl=$("heat"), whyEl=$("why");
+  const weekendEl=$("weekend");
+
+  const isWeekendUTC=()=>{const d=new Date().getUTCDay(); return d===0||d===6};
+  weekendEl.style.display = isWeekendUTC() ? "inline-block" : "none";
+
+  // helper fetch
+  async function j(u){
+    try{
+      const r=await fetch(u,{cache:"no-store"});
+      if(!r.ok) return null;
+      return await r.json();
+    }catch{ return null; }
+  }
+
+  // ---- Bias refresh (no page reload) ----
+  async function refreshBias(){
+    const prices = await j("/api/cg/api/v3/simple/price?ids=pax-gold,bitcoin&vs_currencies=usd&include_24hr_change=true");
+    const goldCh = Number(prices?.["pax-gold"]?.usd_24h_change);
+    const btcCh  = Number(prices?.bitcoin?.usd_24h_change);
+    const news   = await j("/api/gdelt/gold");
+    const headlines = Array.isArray(news?.articles) ? news.articles.length : 0;
+
+    const fmt=(n)=> Number.isFinite(n) ? (n>0? "+" : "") + n.toFixed(2) + "%" : "n/a";
+    btcEl.textContent  = fmt(btcCh);
+    goldEl.textContent = fmt(goldCh);
+    heatEl.textContent = String(headlines);
+
+    let score = 50;  // 50 = neutral
+    const why = [];
+
+    if (Number.isFinite(btcCh)) {
+      if (btcCh <= -1.5) { score += 8;  why.push("BTC risk-off"); }
+      else if (btcCh <= -0.5) { score += 4;  why.push("BTC mild risk-off"); }
+      else if (btcCh >=  1.5) { score -= 8;  why.push("BTC risk-on"); }
+      else if (btcCh >=  0.5) { score -= 4;  why.push("BTC mild risk-on"); }
+      else { why.push("BTC neutral"); }
+    }
+
+    if (Number.isFinite(goldCh)) {
+      if (goldCh >= 0.7)      { score += 5;  why.push("Gold confirming"); }
+      else if (goldCh <= -0.7){ score -= 5;  why.push("Gold drag"); }
+      else if (Math.abs(goldCh) >= 0.3) { why.push("Gold slight tone"); }
+      else { why.push("Gold flat"); }
+    }
+
+    const tape = headlines>=10?"noisy": headlines>=3?"active":"calm";
+    if (tape==="noisy") score = Math.round((score-50)*0.8 + 50); // dampen when noisy
+    score = Math.max(35, Math.min(65, Math.round(score)));
+
+    const bias =
+      score>=65 ? "bullish" :
+      score<=35 ? "bearish" :
+      score>55  ? "bullish" :
+      score<45  ? "bearish" : "neutral";
+
+    scoreEl.textContent = String(score);
+    biasEl.textContent  = bias;
+    biasEl.classList.remove("bullish","bearish","neutral");
+    biasEl.classList.add(bias);
+    whyEl.textContent = "Why: " + (why.join(" • ") || "inputs n/a") + " • tape " + tape;
+
+    $("upd").textContent = "Updated: " + new Date().toLocaleTimeString();
+  }
+
+  // ---- Analogs (optional) ----
+  async function loadAnalogs(){
+    const box=$("analogs");
+    try{
+      const r=await fetch("/analogs/manifest.json",{cache:"no-store"});
+      if(!r.ok) return;
+      const m=await r.json();
+      if(!m?.items?.length) return;
+      box.innerHTML="";
+      for(const it of m.items){
+        const d=document.createElement("div"); d.className="imgbox";
+        d.innerHTML = `
+          <div class="h2" style="margin-bottom:6px">${(it.title||"Scenario")}</div>
+          <img src="${it.img}" alt="${(it.title||"Analog")}" />
+          ${it.note? `<div class="muted" style="margin-top:6px">${it.note}</div>`:""}
+        `;
+        box.appendChild(d);
+      }
+    }catch{}
+  }
+
+  // ---- Exchange / Stablecoin flow pills ----
+  async function loadFlow(){
+    try{
+      const [B,E,U] = await Promise.allSettled([
+        j('/api/flow/btc?window_s=1800&min_usd=500000'),   // last 30m, $500k+
+        j('/api/flow/eth?window_s=1800&min_usd=500000'),
+        j('/api/stable/usdt-eth?window_s=7200')            // last 2h
+      ]);
+      const money = (n) => (n||0).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0});
+      const pills = [];
+      const b=B.value, e=E.value, u=U.value;
+
+      function renderChain(tag, v){
+        if (!v) return '';
+        const quiet = (v.to_exch.usd + v.from_exch.usd) === 0;
+        const net = (v.to_exch.usd||0) - (v.from_exch.usd||0);
+        const dir = net>0 ? '→ EXCH' : net<0 ? '← EXCH' : '•';
+        const netClass = net>0 ? 'fok' : net<0 ? 'fbad' : 'fmuted';
+        const top = v.top?.usd
+          ? ` • top <span class="fmono">${money(v.top.usd)}</span>
+               <span class="fmuted">${v.top.dir==='to'?'→ EXCH':'← EXCH'}</span>`
+          : ` • <span class="fmuted">${quiet?'quiet':'—'}</span>`;
+        return `<span class="fpill">
+                  ${tag}: to <b>${v.to_exch.count}</b> / from <b>${v.from_exch.count}</b>${top}
+                  • net <span class="fmono ${netClass}">${money(Math.abs(net))}</span> <span class="fmuted">${dir}</span>
+                </span>`;
+      }
+
+      if (b) pills.push(renderChain('BTC', b));
+      if (e) pills.push(renderChain('ETH', e));
+
+      if (u){
+        const bias = u.mints.usd > u.burns.usd ? 'fok' : (u.mints.usd < u.burns.usd ? 'fbad' : 'fmuted');
+        pills.push(
+          `<span class="fpill">
+            USDT(ETH): <span class="${bias}">mints ${money(u.mints.usd)}</span> / burns ${money(u.burns.usd)}
+            ${u.bigprints?.length ? ` • big→exch ${u.bigprints.length}` : ``}
+          </span>`
+        );
+      }
+
+      const box = $("flowPills");
+      box.innerHTML = pills.length ? pills.join(' ') : '<span class="fpill fmuted">no flow</span>';
+    }catch{
+      $("flowPills").innerHTML = '<span class="fpill fbad">flow error</span>';
+    }
+  }
+
+  // kick everything
+  refreshBias();                // initial
+  loadAnalogs();                // optional
+  loadFlow();                   // initial
+  setInterval(refreshBias, 60_000); // bias every 60s
+  setInterval(loadFlow, 20_000);    // flow every 20s
+})();
+</script>
+ <!-- Patch S1-B: Hero Signal strip (inserts under bias/implication) -->
+<script>
+(function(){
+  if (document.getElementById('signal-strip')) return; // guard
+
+  function q(s){ return document.querySelector(s); }
+  // Prefer to anchor BELOW the implication line if it exists; else below the bias number.
+  var anchor = q('#bias-implication') ||
+               q('#bias-score') || q('.bias-score') || q('[data-bias]') ||
+               q('#biasValue') || q('[data-role="bias-score"]') || q('[data-testid="bias-score"]');
+
+  if (!anchor) { // bias may render async; retry briefly
+    let tries = 0;
+    const t = setInterval(function(){
+      anchor = q('#bias-implication') ||
+               q('#bias-score') || q('.bias-score') || q('[data-bias]') ||
+               q('#biasValue') || q('[data-role="bias-score"]') || q('[data-testid="bias-score"]');
+      if (anchor || ++tries > 40) { clearInterval(t); if (anchor) mount(); }
+    }, 250);
+  } else {
+    mount();
+  }
+
+  function insertAfter(ref, node){ ref.parentNode.insertBefore(node, ref.nextSibling); }
+
+  function mount(){
+    if (document.getElementById('signal-strip')) return;
+
+    const strip = document.createElement('div');
+    strip.id = 'signal-strip';
+    strip.setAttribute('role','status');
+    Object.assign(strip.style, {
+      marginTop:'8px', padding:'6px 10px',
+      border:'1px solid rgba(255,255,255,0.08)',
+      borderRadius:'10px', background:'rgba(255,255,255,0.03)',
+      fontSize:'13px', display:'flex', flexWrap:'wrap',
+      alignItems:'center', gap:'8px'
+    });
+
+    const strong = document.createElement('strong');
+    strong.id = 'signal-label';
+    strong.style.letterSpacing = '0.2px';
+
+    const sep = document.createElement('span');
+    sep.textContent = '·';
+    sep.style.opacity = '0.5';
+
+    const why = document.createElement('span');
+    why.id = 'signal-why';
+    why.style.opacity = '0.85';
+
+    const link = document.createElement('a');
+    link.href = '/predictions.html';
+    link.textContent = 'Predictions';
+    link.style.textDecoration = 'underline';
+    link.style.opacity = '0.9';
+
+    strip.appendChild(strong);
+    strip.appendChild(document.createTextNode(' '));
+    strip.appendChild(sep);
+    strip.appendChild(document.createTextNode(' '));
+    strip.appendChild(why);
+    strip.appendChild(document.createTextNode('  '));
+    strip.appendChild(link);
+
+    insertAfter(anchor, strip);
+    refresh();
+    setInterval(refresh, 5000);
+  }
+
+  function findBiasEl(){
+    return q('#bias-score') || q('.bias-score') || q('[data-bias]') ||
+           q('#biasValue') || q('[data-role="bias-score"]') || q('[data-testid="bias-score"]');
+  }
+  function parseBias(el){
+    if (!el) return NaN;
+    let txt = el.getAttribute('data-bias') || el.textContent || '';
+    txt = String(txt).replace(/[^\d.\-:]/g,'');
+    if (txt.includes(':')) txt = txt.split(':').pop();
+    const n = parseFloat(txt);
+    return Number.isFinite(n) ? n : NaN;
+  }
+  function labelFromBias(b){
+    if (Number.isNaN(b)) return {label:'Signal: —', bucket:'awaiting'};
+    if (b <= 45) return {label:'Signal: Risk-off', bucket:'risk-off'};
+    if (b < 55)  return {label:'Signal: Neutral',  bucket:'neutral'};
+    if (b < 75)  return {label:'Signal: Risk-on',  bucket:'risk-on'};
+    return {label:'Signal: Strong risk-on', bucket:'strong-risk-on'};
+  }
+  function readFlowToken(ids){
+    for (const sel of ids){
+      const el = q(sel);
+      if (el && el.textContent){
+        const t = el.textContent.toLowerCase();
+        if (t.includes('btc') && t.includes('outflow')) return 'BTC outflow';
+        if (t.includes('btc') && t.includes('inflow'))  return 'BTC inflow';
+        if (t.includes('eth') && t.includes('outflow')) return 'ETH outflow';
+        if (t.includes('eth') && t.includes('inflow'))  return 'ETH inflow';
+        if (t.includes('mint')) return 'USDT mint';
+        if (t.includes('burn')) return 'USDT burn';
+        return el.textContent.trim().slice(0,22);
+      }
+    }
+    return null;
+  }
+  function synthWhy(biasNum){
+    const parts = [];
+    const b = Math.round(biasNum);
+    parts.push(Number.isNaN(b) ? 'Bias: n/a'
+      : (b < 46 ? `Bias ${b} → risk-off`
+      :  b < 55 ? `Bias ${b} → neutral`
+      :  b < 75 ? `Bias ${b} → risk-on`
+                : `Bias ${b} → strong risk-on`));
+    const btc  = readFlowToken(['#btc-flow','#flow-btc','[data-flow="btc"]','.flow-btc']);
+    const eth  = readFlowToken(['#eth-flow','#flow-eth','[data-flow="eth"]','.flow-eth']);
+    const usdt = readFlowToken(['#usdt-eth-flow','#flow-usdt-eth','[data-flow="usdt-eth"]','.flow-usdt-eth']);
+    if (btc) parts.push(btc); if (eth) parts.push(eth); if (usdt) parts.push(usdt);
+    if (!btc && !eth && !usdt) parts.push('Flows: pending');
+    return parts.slice(0,3).join(' · ');
+  }
+  function refresh(){
+    const b = parseBias(findBiasEl());
+    const {label} = labelFromBias(b);
+    const L = document.getElementById('signal-label');
+    const W = document.getElementById('signal-why');
+    if (L) L.textContent = label;
+    if (W) W.textContent = synthWhy(b);
+  }
+})();
+</script>
+<!-- Patch H1: Heartbeat status (read-only, tiny) -->
+<script>
+(function(){
+  if (document.getElementById('flow-heartbeat')) return; // guard
+
+  // Create a subtle line at bottom of the page
+  var hb = document.createElement('div');
+  hb.id = 'flow-heartbeat';
+  hb.style.marginTop = '14px';
+  hb.style.fontSize = '12px';
+  hb.style.opacity = '0.75';
+  hb.style.borderTop = '1px solid rgba(255,255,255,0.08)';
+  hb.style.paddingTop = '8px';
+  hb.textContent = 'Heartbeat: initializing…';
+  document.body.appendChild(hb);
+
+  var endpoints = ['/api/flow/btc','/api/flow/eth','/api/flow/usdt-eth'];
+  var lastOkTs = null;
+  var lastOkEndpoint = '—';
+  var sinceSec = 0;
+
+  function setText(txt){
+    hb.textContent = txt;
+  }
+
+  function withTimeout(fetchPromise, ms){
+    var ctrl = new AbortController();
+    var t = setTimeout(function(){ ctrl.abort(); }, ms);
+    return fetchPromise(ctrl).finally(function(){ clearTimeout(t); });
+  }
+
+  async function tryEndpoint(url){
+    try {
+      await withTimeout(
+        (ctrl)=>fetch(url, { method:'GET', cache:'no-store', signal: ctrl.signal }),
+        4000
+      ).then(function(r){ if (!r.ok) throw new Error('HTTP '+r.status); });
+      return true;
+    } catch(e) {
+      return false;
+    }
+  }
+
+  async function ping(){
+    for (var i=0;i<endpoints.length;i++){
+      var ok = await tryEndpoint(endpoints[i]);
+      if (ok){
+        lastOkTs = Date.now();
+        lastOkEndpoint = endpoints[i];
+        sinceSec = 0;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function render(){
+    if (lastOkTs){
+      setText('Live • ' + sinceSec + 's • ' + lastOkEndpoint);
+    } else {
+      setText('No response • ' + sinceSec + 's • /api/flow/*');
+    }
+  }
+
+  // Kick off: immediate ping, then re-ping every 30s; tick display every 1s
+  ping().then(render);
+  setInterval(function(){ sinceSec++; render(); }, 1000);
+  setInterval(function(){ ping().then(render); }, 30000);
+})();
+</script>
+<!-- Patch QRS-01: quiet recent-signals until API exists (remove to rollback) -->
+<script>
+(function () {
+  try {
+    if (window.__quiet_recent_signals) return;
+    window.__quiet_recent_signals = true;
+
+    // 1) Hide our recent-signals shell if present
+    var wrap = document.getElementById('recent-signal-wrap');
+    if (wrap) wrap.style.display = 'none';
+
+    // 2) Silently short-circuit fetches to the placeholder endpoints so DevTools stays clean
+    var _origFetch = window.fetch.bind(window);
+    window.fetch = function (input, init) {
+      try {
+        var url = (typeof input === 'string') ? input : (input && input.url) || '';
+        if (url && (url.indexOf('/api/signal/recent') !== -1 || url.indexOf('/api/edge/recent') !== -1)) {
+          // Return an empty list with HTTP 200 to prevent network 404 spam
+          return Promise.resolve(new Response('[]', {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          }));
+        }
+      } catch (e) { /* fall through */ }
+      return _origFetch(input, init);
+    };
+  } catch (e) { /* no-op */ }
+})();
+</script>
+<!-- /Patch QRS-01 -->
+<!-- Patch NA-01: Mini "Now / Action" subtitle (safe, reversible) -->
+<script>
+(function () {
+  try {
+    if (document.getElementById('now-action-subtitle')) return; // guard
+
+    // 1) Make the bar
+    var bar = document.createElement('div');
+    bar.id = 'now-action-subtitle';
+    bar.style.fontSize = '12px';
+    bar.style.lineHeight = '18px';
+    bar.style.padding = '6px 10px';
+    bar.style.margin = '8px 0 0 0';
+    bar.style.border = '1px solid rgba(255,255,255,0.08)';
+    bar.style.borderRadius = '10px';
+    bar.style.background = 'rgba(255,255,255,0.03)';
+    bar.style.display = 'flex';
+    bar.style.gap = '14px';
+    bar.style.alignItems = 'center';
+    bar.style.flexWrap = 'wrap';
+
+    var nowSpan = document.createElement('span');
+    nowSpan.id = 'now-action-now';
+    nowSpan.textContent = 'Now: —';
+    var actSpan = document.createElement('span');
+    actSpan.id = 'now-action-act';
+    actSpan.textContent = 'Action: —';
+
+    // pill styling helper
+    function pill(el, tone){
+      el.style.padding = '2px 8px';
+      el.style.borderRadius = '999px';
+      el.style.border = '1px solid rgba(255,255,255,0.08)';
+      el.style.background = 'rgba(255,255,255,0.04)';
+      if (tone==='green') el.style.boxShadow = 'inset 0 0 0 999px rgba(0,255,128,0.08)';
+      if (tone==='amber') el.style.boxShadow = 'inset 0 0 0 999px rgba(255,200,0,0.08)';
+      if (tone==='red') el.style.boxShadow = 'inset 0 0 0 999px rgba(255,80,80,0.08)';
+      return el;
+    }
+    pill(nowSpan);
+    pill(actSpan, 'amber');
+
+    bar.appendChild(nowSpan);
+    bar.appendChild(actSpan);
+
+    // 2) Insert the bar just under the header area (before the first main card)
+    var anchor = document.querySelector('#app') || document.body;
+    // Try to put it just above the first big card
+    var firstCard = document.querySelector('.card, .panel, [data-card], [role="region"]');
+    if (firstCard && firstCard.parentNode) {
+      firstCard.parentNode.insertBefore(bar, firstCard);
+    } else {
+      anchor.insertBefore(bar, anchor.firstChild);
+    }
+
+    // 3) Updater: parse current bias + headlines/hr from visible text
+    function extractBiasNumber(){
+      try{
+        var full = document.body.textContent || '';
+        var m = full.match(/Bias[^()]*\(\s*(-?\d+(?:\.\d+)?)\s*\)/i);
+        if (m) return parseFloat(m[1]);
+      }catch(e){}
+      return null;
+    }
+    function extractBiasLabel(){
+      try{
+        // look near the "Bias:" chip/line
+        var biasLine = Array.from(document.querySelectorAll('*'))
+          .find(n => n.textContent && n.textContent.trim().startsWith('Bias:'));
+        if (biasLine){
+          var txt = biasLine.textContent;
+          var m = txt.match(/Bias:\s*([a-zA-Z]+)/);
+          if (m) return m[1].toLowerCase();
+        }
+      }catch(e){}
+      return 'neutral';
+    }
+    function extractHeadlinesHr(){
+      try{
+        var drv = Array.from(document.querySelectorAll('*')).find(n => n.textContent && n.textContent.indexOf('Headlines/hr')!==-1);
+        if (drv){
+          var m = drv.textContent.match(/Headlines\/hr\s+(\d+)/);
+          if (m) return parseInt(m[1],10);
+        }
+      }catch(e){}
+      return null;
+    }
+
+    function pickAction(b){
+      if (b==null) return {text:'Wait', tone:'amber'};
+      if (b >= 65 || b <= 35) return {text:'Act (small, tight stops)', tone:'green'};
+      if ((b >= 55 && b <= 64) || (b >= 36 && b <= 45)) return {text:'Scout with bias', tone:'amber'};
+      return {text:'Wait', tone:'amber'}; // 46–54
+    }
+
+    function render(){
+      var bNum = extractBiasNumber();
+      var bLbl = extractBiasLabel();
+      var h = extractHeadlinesHr();
+
+      var nowTxt = 'Now: Bias ' + (bLbl||'neutral') + (bNum!=null?(' '+bNum):'');
+      if (h!=null) nowTxt += ' • Headlines '+h+'/hr';
+
+      nowSpan.textContent = nowTxt;
+
+      var act = pickAction(bNum);
+      actSpan.textContent = 'Action: ' + act.text;
+      pill(actSpan, act.tone);
+    }
+
+    render();
+    setInterval(render, 15000); // refresh every 15s
+  } catch (e) { /* no-op */ }
+})();
+</script>
+<!-- /Patch NA-01 -->
+<!-- Patch NA-02: Action tooltip (friendly explainer; reversible) -->
+<script>
+(function () {
+  try {
+    // Require NA-01 elements
+    var act = document.getElementById('now-action-act');
+    if (!act || document.getElementById('now-action-help')) return;
+
+    // Tooltip element
+    var tip = document.createElement('div');
+    tip.id = 'now-action-help';
+    tip.style.position = 'fixed';
+    tip.style.zIndex = '9999';
+    tip.style.maxWidth = '320px';
+    tip.style.padding = '10px 12px';
+    tip.style.border = '1px solid rgba(255,255,255,0.12)';
+    tip.style.borderRadius = '10px';
+    tip.style.background = 'rgba(20,20,24,0.96)';
+    tip.style.boxShadow = '0 8px 24px rgba(0,0,0,0.35)';
+    tip.style.fontSize = '12px';
+    tip.style.lineHeight = '1.45';
+    tip.style.color = 'rgba(255,255,255,0.92)';
+    tip.style.backdropFilter = 'saturate(120%) blur(8px)';
+    tip.style.display = 'none';
+    tip.style.pointerEvents = 'none';
+
+    // Friendly content (plain-English)
+    tip.innerHTML =
+      '<div style="font-weight:600;margin-bottom:6px;">Action guide</div>' +
+      '<div style="opacity:.9;margin-bottom:6px;">' +
+      'Use this as a quick read on the next 1–6h.' +
+      '</div>' +
+      '<ul style="padding-left:16px;margin:0 0 6px 0;">' +
+        '<li><b>Strong bias (≥65 or ≤35)</b>: “<b>Act</b>”. Trade with the trend, keep <b>tight stops</b>.</li>' +
+        '<li><b>Mild bias (55–64 or 36–45)</b>: “<b>Scout</b>”. Test small; wait for confirmation.</li>' +
+        '<li><b>Neutral (46–54)</b>: “<b>Wait</b>”. No edge; avoid chop.</li>' +
+      '</ul>' +
+      '<div style="opacity:.9;">' +
+        '<b>Heads-up:</b> if <b>Headlines ≥3/hr</b>, expect faster moves &amp; bigger swings.' +
+      '</div>';
+
+    document.body.appendChild(tip);
+
+    // Accessible fallback (title) for long-press on mobile
+    act.title = 'Action guide — Strong (≥65/≤35): Act; Mild (55–64/36–45): Scout; Neutral (46–54): Wait. If headlines ≥3/hr, expect faster moves.';
+
+    // Position & show/hide
+    function showTip(e) {
+      const rect = act.getBoundingClientRect();
+      const pad = 8;
+      // Default above the pill; if not enough space, place below
+      var top = rect.top - tip.offsetHeight - pad;
+      var left = rect.left;
+
+      tip.style.display = 'block';
+      // Measure after display to get height
+      var needAbove = rect.top >= (tip.offsetHeight + 16);
+      if (!needAbove) top = rect.bottom + pad;
+
+      // Prevent overflow on the right edge
+      var maxLeft = window.innerWidth - tip.offsetWidth - 12;
+      left = Math.max(12, Math.min(left, maxLeft));
+
+      tip.style.top = Math.round(top) + 'px';
+      tip.style.left = Math.round(left) + 'px';
+    }
+    function hideTip() { tip.style.display = 'none'; }
+
+    act.setAttribute('tabindex', '0'); // keyboard focusable
+    act.setAttribute('aria-describedby', 'now-action-help');
+
+    act.addEventListener('mouseenter', showTip);
+    act.addEventListener('mouseleave', hideTip);
+    act.addEventListener('focus', showTip);
+    act.addEventListener('blur', hideTip);
+  } catch (e) { /* no-op */ }
+})();
+</script>
+<!-- /Patch NA-02 -->
+<!-- HUMAN-UI-01 ▸ Friendly Now/Action, Checks, and Signal (no new APIs) -->
+<style>
+  .hu-wrap{margin-top:8px;margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap}
+  .hu-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;
+           background:#1f2a37;border:1px solid rgba(255,255,255,.08);font-size:13px}
+  .hu-chip.action{background:#23324a;border-color:rgba(59,130,246,.35)}
+  .hu-checks{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+  .hu-check{font-size:13px;padding:4px 8px;border-radius:8px;border:1px solid}
+  .hu-ok{color:#16a34a;border-color:rgba(22,163,74,.35);background:rgba(22,163,74,.08)}
+  .hu-no{color:#f59e0b;border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.08)}
+  .hu-note{font-size:12px;opacity:.75;margin-left:4px}
+  .hu-signal{margin:10px 0 6px 0;font-size:14px;opacity:.95}
+  .hu-muted{opacity:.6}
+  @media (max-width:600px){.hu-wrap{gap:6px}.hu-chip{font-size:12px}}
+</style>
+
+<script>
+(function(){
+  if (document.getElementById('hu-now-action')) return; // guard
+
+  // --- helpers --------------------------------------------------------------
+  function text(){ return (document.body && document.body.textContent) || ''; }
+  function num(re, def=0){
+    const m = text().match(re);
+    return m ? parseFloat(m[1]) : def;
+  }
+  function has(re){ return re.test(text()); }
+  function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!=null) e.innerHTML=html; return e; }
+  function insertAfter(ref, node){ ref.parentNode.insertBefore(node, ref.nextSibling); }
+
+  // --- derive simple inputs from the page -----------------------------------
+  // Bias number, as shown "Bias (56)" anywhere on the page
+  const biasVal = num(/Bias[^()]*\(\s*(-?\d+(?:\.\d+)?)\s*\)/i, NaN);
+  const haveBias = !isNaN(biasVal);
+  const biasLabel = haveBias ? (biasVal>=65?'bullish':(biasVal<=49?'bearish':'neutral')) : 'neutral';
+
+  // Headlines pace, from the "Headlines/hr N" string
+  const headlinesHr = num(/Headlines\/hr\s+(\d+)/i, 0);
+  const newsHot = headlinesHr >= 3;
+
+  // Flows: look for common words already used on the page
+  // (inflow / outflow / mint / burn). If none appear, we call it "waiting".
+  const flowsHot = has(/\b(inflow|outflow|mint|burn)\b/i);
+
+  // --- decide Action and Signal sentence ------------------------------------
+  let action, signalLine, whyBits = [];
+  if (haveBias) whyBits.push(`Bias ${biasVal} (${biasLabel})`);
+  whyBits.push(`Headlines ${headlinesHr}/hr`);
+  // Action rules: minimal, human
+  if (newsHot && flowsHot && haveBias && biasVal>=55){
+    action = 'Go (small size)';
+    signalLine = 'Signal (1–6h): Mild Bullish — flows + news aligned. Window: 30–90m.';
+  } else if (newsHot){
+    action = 'Scout';
+    signalLine = 'Signal (1–6h): Waiting for flows. News is hot; watch BTC/ETH inflow.';
+  } else {
+    action = 'Wait';
+    signalLine = 'Signal (1–6h): Waiting for confirmation (flows or headlines spike).';
+  }
+
+  // Checks row
+  const checksWrap = el('div','hu-checks','');
+  checksWrap.appendChild(el('span', 'hu-check ' + (haveBias?'hu-ok':'hu-no'),
+                           'Bias ' + (haveBias?'✓':'✕') + (haveBias?'' : '<span class="hu-note"> — score not found</span>')));
+  checksWrap.appendChild(el('span', 'hu-check ' + (flowsHot?'hu-ok':'hu-no'),
+                           'Money flows ' + (flowsHot?'✓':'✕') + (flowsHot?'' : '<span class="hu-note"> — waiting for inflow/outflow</span>')));
+  checksWrap.appendChild(el('span', 'hu-check ' + (newsHot?'hu-ok':'hu-no'),
+                           'News pace ' + (newsHot?'✓':'✕') + (newsHot?'' : '<span class="hu-note"> — headlines quiet</span>')));
+
+  // Now/Action chips (top)
+  const now = el('div','hu-wrap',''); now.id='hu-now-action';
+  now.appendChild(el('div','hu-chip','<strong>Now:</strong> ' +
+                     (haveBias?`Bias ${biasVal} (${biasLabel})`:'Bias n/a') +
+                     ' &nbsp;•&nbsp; Headlines ' + headlinesHr + '/hr'));
+  now.appendChild(el('div','hu-chip action','<strong>Action:</strong> ' + action));
+
+  // Signal sentence container
+  const sig = el('div','hu-signal', signalLine);
+
+  // --- place it in the page --------------------------------------------------
+  // 1) Try to put Now/Action bar where your old chips live (above Session Bias card)
+  const firstCard = document.querySelector('h2, h3, .card, .session-bias') || document.body;
+  const anchorTop = document.querySelector('.hu-attach-top') || firstCard;
+  anchorTop.parentNode.insertBefore(now, anchorTop);
+
+  // 2) Inside Session Bias, under the "Signal" row, show Checks + Signal (1–6h)
+  // Find the Signal row; if not present, attach near the first "Session Bias" header.
+  let sb = null;
+  const h2s = Array.from(document.querySelectorAll('h2,h3')).filter(h => /Session\s+Bias/i.test(h.textContent));
+  if (h2s.length) sb = h2s[0].parentElement;
+  const signalRow = sb ? sb.querySelector(':scope .hu-signal-slot') || sb : document.querySelector('.hu-signal-slot') || sb || firstCard;
+
+  const holder = el('div','hu-signal-slot','');
+  holder.appendChild(checksWrap);
+  holder.appendChild(sig);
+
+  // Try to insert right after the visible “Signal:” line; fallback to after the Session Bias header.
+  const signalLabel = sb ? sb.querySelector('div,span,li,section') : null;
+  if (signalLabel) insertAfter(signalLabel, holder); else insertAfter(signalRow, holder);
+
+  // --- default Alerts ON (first-time) ---------------------------------------
+  try {
+    const lsKey = 'alr_pref_onboard_v1';
+    if (!localStorage.getItem(lsKey)) {
+      // flip any known alert chips ON visually
+      const labels = [/Headlines\s*spike/i, /Bias\s*flip/i, /Gold\s*heat/i, /Flow/i];
+      Array.from(document.querySelectorAll('button, .chip, .pill, .badge')).forEach(b=>{
+        const t=(b.textContent||'').trim();
+        if (labels.some(r=>r.test(t))) { b.classList.add('on'); b.setAttribute('aria-pressed','true'); }
+      });
+      localStorage.setItem(lsKey,'1');
+    }
+  } catch(e){}
+
+  // --- tiny polish: if the tiny top tickers are all zero, show "quiet" -------
+  try{
+    const strips = Array.from(document.querySelectorAll('div,span')).filter(x =>
+      /BTC:\s*to\s*0\s*\/\s*from\s*0/i.test(x.textContent||'') ||
+      /ETH:\s*to\s*0\s*\/\s*from\s*0/i.test(x.textContent||''));
+    strips.forEach(s=>{
+      if (!/quiet/i.test(s.textContent)) s.textContent = s.textContent.replace(/(BTC:|ETH:).*/i, (m)=>
+        (m.startsWith('BTC:')?'BTC: ':'ETH: ') + 'quiet');
+    });
+  }catch(e){}
+})();
+</script>
+<!-- END ▸ HUMAN-UI-01 (remove this block to rollback) -->
+<!-- HUMAN-UI-02 ▸ One-line drivers & hover tooltips for Checks -->
+<style>
+  #hu-why-line{margin:6px 0 2px 0;font-size:12px;opacity:.85}
+  .hu-check[title]{cursor:help}
+</style>
+<script>
+(function(){
+  try{
+    // 1) If our Now/Action row exists, enrich it with a one-line "Why now:"
+    var rail = document.getElementById('hu-now-action');
+    if(rail && !document.getElementById('hu-why-line')){
+      // Derive three simple drivers from page text
+      var full = (document.body && document.body.textContent) ? document.body.textContent : '';
+
+      // Headlines pace
+      var mHead = full.match(/Headlines\/hr\s+(\d+)/i);
+      var headlines = mHead ? parseInt(mHead[1],10) : 0;
+      var newsHot = headlines >= 3;
+
+      // Flows presence (anywhere on page)
+      var flowsHot = /(inflow|outflow|mint|burn)/i.test(full);
+
+      // Bias bucket number → polarity
+      var biasNum = null, mBias = full.match(/Bias[^()]*\(\s*(-?\d+(?:\.\d+)?)\s*\)/i);
+      if(mBias) biasNum = parseFloat(mBias[1]);
+      var polarity = 'neutral';
+      if(biasNum!=null){
+        if(biasNum >= 55) polarity = 'bullish';
+        else if(biasNum <= 45) polarity = 'bearish';
+      }
+
+      var why = 'Why now: '+
+        'flows ' + (flowsHot ? 'active' : 'quiet') + ' • '+
+        'news '  + (newsHot ? 'hot' : 'calm') + ' • '+
+        'bias '  + polarity;
+
+      var p = document.createElement('div');
+      p.id = 'hu-why-line';
+      p.textContent = why;
+      rail.parentNode.insertBefore(p, rail.nextSibling);
+    }
+
+    // 2) Add hover tooltips to the three Checks (Bias / Money flows / News pace)
+    //    We reuse the existing .hu-check pills from HUMAN-UI-01.
+    var checks = document.querySelectorAll('.hu-check');
+    checks.forEach(function(el){
+      var txt = el.textContent || '';
+      var isGood = /✓/.test(txt);
+      if(/Bias/.test(txt)){
+        el.title = isGood
+          ? 'We found a bias number on the page (e.g., “Bias 56”).'
+          : 'No bias number visible yet on the page.';
+      }else if(/Money flows/.test(txt)){
+        el.title = isGood
+          ? 'We see flow words (inflow/outflow/mint/burn) on the page.'
+          : 'No visible flow cues yet (waiting for inflow/outflow/mint/burn).';
+      }else if(/News pace/.test(txt)){
+        el.title = isGood
+          ? 'Headlines pace is hot (≥3 per hour).'
+          : 'Headlines pace is calm (<3 per hour).';
+      }
+    });
+  }catch(e){ console.warn('HUMAN-UI-02', e); }
+})();
+</script>
+<!-- END ▸ HUMAN-UI-02 (remove this block to rollback) -->
+<!-- HUMAN-UI-02 ▸ Empty-state helper & pill legend (no new APIs) -->
+<style>
+  .hu-muted    { font-size: 12px; color: rgba(255,255,255,0.55); }
+  .hu-spacer   { height: 8px; }
+  .hu-legend   { font-size: 12px; color: rgba(255,255,255,0.62); }
+  .hu-legend b { color: rgba(255,255,255,0.85); }
+</style>
+<script>
+(function HU02(){
+  // Avoid duplicates if re-run
+  if (document.getElementById('hu-empty-signals') &&
+      document.getElementById('hu-pill-legend')) return;
+
+  // 1) Find the "Recent Signals" card and add a friendly empty-state hint
+  function addEmptySignalsHint(){
+    if (document.getElementById('hu-empty-signals')) return;
+
+    // Look for a header that says "Recent Signals"
+    let header = Array.from(document.querySelectorAll('h1,h2,h3,h4,div,span'))
+      .find(n => n.textContent.trim().toLowerCase() === 'recent signals');
+
+    if (!header) return;
+
+    // Try to detect rows underneath the card to decide if it's empty
+    // (fallback: always show the helper; the text already explains "when it fills")
+    let card = header.closest('[class*="card"], section, div');
+    let hasRows = false;
+    if (card){
+      const rows = card.querySelectorAll('tr, [role="row"]');
+      hasRows = rows && rows.length > 0;
+    }
+
+    // Insert helper *below* the header area
+    const helper = document.createElement('div');
+    helper.id = 'hu-empty-signals';
+    helper.className = 'hu-muted';
+    helper.style.margin = '6px 0 2px 0';
+    helper.textContent =
+      'Signals appear when bias flips or flows fire. Quiet tape = no row yet.';
+    // Show if empty OR if we can’t confidently detect rows
+    if (!hasRows) {
+      header.insertAdjacentElement('afterend', helper);
+    }
+  }
+
+  // 2) Add a tiny legend under the green/amber/red pills
+  function addPillLegend(){
+    if (document.getElementById('hu-pill-legend')) return;
+
+    // Find one of our check pills from the earlier HUMAN-UI block
+    const anyPill = document.querySelector('.hu-check');
+    if (!anyPill) return;
+
+    // Place the legend just after the pills container (use the pill's parent line)
+    const line = anyPill.parentElement || anyPill;
+    const spacer = document.createElement('div');
+    spacer.className = 'hu-spacer';
+
+    const legend = document.createElement('div');
+    legend.id = 'hu-pill-legend';
+    legend.className = 'hu-legend';
+    legend.textContent = 'Legend: ';
+    const b1 = document.createElement('b'); b1.textContent = 'Green = tailwind';
+    const b2 = document.createElement('b'); b2.textContent = 'Red = headwind';
+    const b3 = document.createElement('b'); b3.textContent = 'Amber = watchlist';
+    legend.append(b1, '  •  ', b2, '  •  ', b3);
+
+    line.insertAdjacentElement('afterend', spacer);
+    spacer.insertAdjacentElement('afterend', legend);
+  }
+
+  // Run now and re-try briefly as the page hydrates
+  addEmptySignalsHint();
+  addPillLegend();
+  let tries = 0;
+  const iv = setInterval(() => {
+    tries++;
+    addEmptySignalsHint();
+    addPillLegend();
+    if (tries > 20) clearInterval(iv); // ~2s total
+  }, 100);
+
+})();
+</script>
+<!-- END ▸ HUMAN-UI-02 (remove this block to rollback) -->
+<!-- HB-01 ▸ Heartbeat dot + CoinGecko backoff (no back-end changes) -->
+<style>
+  .hb-pill {
+    display:inline-flex; align-items:center; gap:.5rem;
+    font-size:.9rem; line-height:1; padding:.35rem .6rem;
+    border-radius:999px; background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.08);
+    box-shadow:0 0 0 1px rgba(0,0,0,.25) inset;
+  }
+  .hb-dot { width:.6rem; height:.6rem; border-radius:50%; display:inline-block; }
+  .hb-ok   { background:#22c55e; box-shadow:0 0 0 .2rem rgba(34,197,94,.2); animation:hbPulse 1.4s infinite; }
+  .hb-warn { background:#f59e0b; box-shadow:0 0 0 .2rem rgba(245,158,11,.18); animation:hbPulse 2.0s infinite; }
+  .hb-dead { background:#6b7280; box-shadow:none; animation:none; }
+  @keyframes hbPulse {
+    0% { transform:scale(1);   opacity:.9 }
+    50%{ transform:scale(1.06); opacity:1 }
+    100%{transform:scale(1);   opacity:.9 }
+  }
+</style>
+
+<div id="hb-pill" class="hb-pill" role="status" aria-live="polite" title="Last successful refresh age">
+  <span id="hb-dot" class="hb-dot hb-dead"></span>
+  <span id="hb-text">No response</span>
+</div>
+
+<script>
+(function(){
+  // --- Placement: tuck next to the "Updated:" chip if found; else pin top-left.
+  function placeHB(){
+    const pill = document.getElementById('hb-pill');
+    if (pill.__placed) return;
+    const nodes = Array.from(document.querySelectorAll('body *'));
+    const upd = nodes.find(n => n.childNodes && n.childNodes.length === 1 &&
+                                typeof n.textContent === 'string' &&
+                                n.textContent.trim().startsWith('Updated:'));
+    if (upd && upd.parentElement) {
+      upd.parentElement.insertBefore(pill, upd.nextSibling);
+      pill.style.marginLeft = '10px';
+      pill.__placed = true;
+    } else {
+      // safe fallback
+      pill.style.position = 'fixed';
+      pill.style.top = '10px';
+      pill.style.left = '10px';
+      pill.style.zIndex = 9999;
+      pill.__placed = true;
+    }
+  }
+  placeHB();
+
+  // --- Heartbeat state + UI updater
+  let lastTouch = Date.now() - 120000; // start as stale
+  const dot  = document.getElementById('hb-dot');
+  const text = document.getElementById('hb-text');
+
+  function renderHB(){
+    const age = Math.floor((Date.now() - lastTouch)/1000);
+    if (age <= 60) {
+      dot.className = 'hb-dot hb-ok';
+      text.textContent = `Live • ${age}s`;
+    } else if (age <= 90) {
+      dot.className = 'hb-dot hb-warn';
+      text.textContent = `Quiet • ${age}s`;
+    } else {
+      dot.className = 'hb-dot hb-dead';
+      text.textContent = 'No response';
+    }
+  }
+  setInterval(renderHB, 1000);
+
+  // --- A way for the page to "touch" the heartbeat on successful refresh.
+  // 1) Hook fetch() so any successful network call counts as alive.
+  if (!window.__hb_fetch_wrapped) {
+    window.__hb_fetch_wrapped = true;
+    const origFetch = window.fetch.bind(window);
+    window.fetch = async function(url, opts){
+      try {
+        const res = await origFetch(url, opts);
+        if (res && res.ok) {
+          lastTouch = Date.now();
+        }
+        // CoinGecko 429 backoff
+        const u = (typeof url === 'string') ? url : (url && url.url) || '';
+        if (res && res.status === 429 && u.includes('/api/cg/')) {
+          // backoff ~2 minutes
+          const until = Date.now() + 120000;
+          window.__cg_mute_until = until;
+          console.warn('CG muted for 120s due to 429 (rate limit).');
+        }
+        return res;
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    };
+  }
+
+  // 2) Respect CG mute before kicking off any CG call (if your page calls it directly)
+  //    Provide a tiny helper that your existing code can use safely.
+  window.cgFetch = async function(url, opts){
+    if (window.__cg_mute_until && Date.now() < window.__cg_mute_until) {
+      // pretend we’re skipping this request to avoid 429 spam
+      throw new Error('cg-muted');
+    }
+    return fetch(url, opts);
+  };
+
+  // 3) One more safety: MutationObserver bumps heartbeat when “Updated:” text changes.
+  try {
+    const mo = new MutationObserver(() => {
+      const n = Array.from(document.querySelectorAll('body *')).find(x =>
+        (x.childNodes && x.childNodes.length===1) &&
+        typeof x.textContent === 'string' &&
+        x.textContent.trim().startsWith('Updated:')
+      );
+      if (n) lastTouch = Date.now();
+    });
+    mo.observe(document.body, {subtree:true, childList:true, characterData:true});
+  } catch(_) {}
+
+  // initial paint
+  renderHB();
+})();
+</script>
+<!-- END ▸ HB-01 -->
+<!-- FLW-UX-01 ▸ Flow strip honest mode (BTC/ETH/USDT chips) -->
+<style>
+  .flow-chip .muted { opacity:.65 }
+  .flow-chip .quiet { opacity:.8; font-style:italic }
+  .flow-chip .up    { color:#22c55e }   /* green */
+  .flow-chip .down  { color:#ef4444 }   /* red */
+  .flow-chip .flat  { color:#9ca3af }   /* gray */
+</style>
+<script>
+(function(){
+  // Map visible label -> API endpoint + a finder that locates the existing chip.
+  const SOURCES = {
+    'BTC:':      { url: '/api/flow/btc',      label: 'BTC:' },
+    'ETH:':      { url: '/api/flow/eth',      label: 'ETH:' },
+    'USDT(ETH):':{ url: '/api/flow/usdt-eth', label: 'USDT(ETH):' }
+  };
+
+  // Find chip by its starting label text (keeps your current DOM/skin).
+  function findChipStart(label){
+    const nodes = Array.from(document.querySelectorAll('body *'));
+    return nodes.find(n => {
+      const t = (n.textContent||'').trim();
+      return t.startsWith(label);
+    });
+  }
+
+  // Normalize whatever the API returns into {to, from, netUsd, pace, mints, burns}
+  function normalize(x){
+    if (!x || typeof x !== 'object') return null;
+    const flat = Object.assign({}, x, x.data||{}, x.result||{});
+    // Try different shapes defensively
+    const to = +(flat.to ?? flat.in ?? flat.in_count ?? 0);
+    const from = +(flat.from ?? flat.out ?? flat.out_count ?? 0);
+    const netUsd = +(flat.net_usd ?? flat.netUSD ?? flat.net ?? 0);
+    const pace = (flat.pace || flat.activity || '').toString().toLowerCase(); // 'quiet'|'active'|'brisk' etc
+    const mints = +(flat.mints ?? flat.mint ?? 0);
+    const burns = +(flat.burns ?? flat.burn ?? 0);
+    return { to, from, netUsd, pace, mints, burns };
+  }
+
+  // Format dollars short
+  function fmtUsd(n){
+    const s = Math.abs(n) >= 1e9 ? (n/1e9).toFixed(2)+'B'
+            : Math.abs(n) >= 1e6 ? (n/1e6).toFixed(2)+'M'
+            : Math.abs(n) >= 1e3 ? (n/1e3).toFixed(1)+'k'
+            : n.toFixed(0);
+    return (n>0?'+':'') + '$' + s;
+  }
+
+  // Render rules:
+  // - If zero activity → "quiet (no flows last hour)"
+  // - If endpoint missing → "no feed"
+  // - Else show: "to X / from Y • net ±$N • pace word"
+  function renderInto(chipRoot, label, data){
+    if (!chipRoot) return;
+    chipRoot.classList.add('flow-chip');
+
+    // Identify the container node that actually holds the label & values.
+    const container = chipRoot; // good enough in your layout
+    const span = document.createElement('span');
+
+    if (data === null) {
+      span.innerHTML = `<strong>${label}</strong> <span class="muted">no feed</span>`;
+    } else {
+      const {to, from, netUsd, pace, mints, burns} = data;
+
+      // Special case: USDT(ETH) – show mints/burns first if present
+      if (label.startsWith('USDT')) {
+        const quiet = (mints===0 && burns===0 && Math.abs(netUsd)<1);
+        if (quiet) {
+          span.innerHTML = `<strong>${label}</strong> <span class="quiet">no mints/burns</span>`;
+        } else {
+          const netCls = netUsd>0 ? 'up' : netUsd<0 ? 'down' : 'flat';
+          span.innerHTML =
+            `<strong>${label}</strong> mints ${mints} / burns ${burns} • net <span class="${netCls}">${fmtUsd(netUsd)}</span>`;
+        }
+      } else {
+        // BTC/ETH
+        const quiet = (to===0 && from===0 && Math.abs(netUsd)<1);
+        if (quiet) {
+          // If API hints "quiet" / headlines calm, surface that instead of hard zeros
+          const paceTag = pace ? ` • ${pace}` : '';
+          span.innerHTML = `<strong>${label}</strong> <span class="quiet">quiet (no flows last hour)</span>${paceTag}`;
+        } else {
+          const netCls = netUsd>0 ? 'up' : netUsd<0 ? 'down' : 'flat';
+          const paceTag = pace ? ` • ${pace}` : '';
+          span.innerHTML =
+            `<strong>${label}</strong> to ${to} / from ${from} • net <span class="${netCls}">${fmtUsd(netUsd)}</span>${paceTag}`;
+        }
+      }
+    }
+
+    // Replace the chip’s text with our friendly version (once per update)
+    container.textContent = ''; // clear
+    container.appendChild(span);
+  }
+
+  async function safeFetch(url){
+    try{
+      // Respect any global CG mute wrapper already present; we only call your own APIs here
+      const res = await fetch(url, { cache:'no-store' });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch { return null; }
+  }
+
+  async function refreshOnce(){
+    for (const key of Object.keys(SOURCES)){
+      const meta = SOURCES[key];
+      const root = findChipStart(meta.label);
+      if (!root) continue;
+      const raw = await safeFetch(meta.url);
+      const norm = normalize(raw);
+      renderInto(root, meta.label, norm);
+    }
+  }
+
+  // Initial and periodic refresh
+  refreshOnce();
+  setInterval(refreshOnce, 60000);
+})();
+</script>
+<!-- END ▸ FLW-UX-01 -->
+<!-- HU-FIX-TOOLTIP-01 ▸ Remove native title tooltips to avoid overlap -->
+<script>
+(function(){
+  // Move title -> data-hint (and aria-label) so only the custom tooltip shows.
+  function migrateTitle(el){
+    if (!el || !el.hasAttribute('title')) return;
+    const t = el.getAttribute('title');
+    el.setAttribute('data-hint', t);
+    el.setAttribute('aria-label', t);
+    el.removeAttribute('title');  // prevents tiny native bubble
+  }
+
+  // The Now/Action pill
+  migrateTitle(document.getElementById('hu-now-action'));
+
+  // Any little check badges we added (Bias ✓ / Money flows ✓ / News pace ✕)
+  document.querySelectorAll('.hu-check[title]').forEach(migrateTitle);
+
+  // If you ever add more later, you can call migrateTitle on them too.
+})();
+</script>
+<!-- END ▸ HU-FIX-TOOLTIP-01 -->
+<!-- HU-FIX-TOOLTIP-02 ▸ Stop native title tooltips in HUD (Now/Action + checks) -->
+<script>
+(function(){
+  // Targets: everything we injected for the human HUD
+  const HUD_ROOTS = [
+    '#hu-now-action',     // Now/Action pill row
+    '#hu-why-line',       // "Why now" line
+    '.hu-check',          // Bias ✓ / Money flows ✓ / News pace ✕ badges
+    '.hu-signal-line',    // Signal text line (if present)
+    '#hu-action-guide'    // Action guide bubble
+  ];
+
+  function withinHUD(el){
+    try {
+      return HUD_ROOTS.some(sel => el.closest(sel));
+    } catch(e){ return false; }
+  }
+
+  function migrateTitle(el){
+    if (!el || !el.hasAttribute('title')) return;
+    // Keep the text for accessibility but avoid the browser bubble
+    const t = el.getAttribute('title');
+    if (t && !el.hasAttribute('aria-label')) el.setAttribute('aria-label', t);
+    if (t && !el.hasAttribute('data-hint')) el.setAttribute('data-hint', t);
+    el.removeAttribute('title');
+  }
+
+  function sweep(container){
+    // Remove titles on the container AND on all descendants
+    migrateTitle(container);
+    container.querySelectorAll('[title]').forEach(migrateTitle);
+  }
+
+  // Initial sweep over our HUD areas
+  HUD_ROOTS.forEach(sel => {
+    document.querySelectorAll(sel).forEach(sweep);
+  });
+
+  // Also sweep any children inside those areas
+  HUD_ROOTS.forEach(sel => {
+    document.querySelectorAll(sel).forEach(node => sweep(node));
+  });
+
+  // Keep it clean if something later re-adds a title
+  const obs = new MutationObserver(list => {
+    for (const m of list) {
+      if (m.type === 'attributes' && m.attributeName === 'title') {
+        const el = m.target;
+        if (withinHUD(el)) migrateTitle(el);
+      } else if (m.type === 'childList') {
+        m.addedNodes.forEach(n => {
+          if (n.nodeType === 1) {
+            if (withinHUD(n)) sweep(n);
+            n.querySelectorAll?.('[title]').forEach(el => { if (withinHUD(el)) migrateTitle(el); });
+          }
+        });
+      }
+    }
+  });
+  obs.observe(document.body, {subtree:true, childList:true, attributes:true, attributeFilter:['title']});
+})();
+</script>
+<!-- END ▸ HU-FIX-TOOLTIP-02 -->
+<!-- HU-FIX-TOOLTIP-02B ▸ Include Live pill & any lingering titles -->
+<script>
+(function(){
+  // 1) Proactively sweep the Live pill (various markup names)
+  const liveCandidates = [
+    '#hu-live', '#hu-heartbeat', '.hu-live-pill', '.live-pill',
+    '[data-live]', '[data-heartbeat]'
+  ];
+  let live = null;
+  for (const sel of liveCandidates) {
+    live = document.querySelector(sel);
+    if (live) break;
+  }
+  if (!live) {
+    // Fallback: find an element that visibly says "Live •"
+    live = [...document.querySelectorAll('body *')]
+      .find(el => el.childElementCount === 0 && /Live\s*•/i.test(el.textContent || ''));
+  }
+  function migrate(el){
+    if (!el || !el.hasAttribute('title')) return;
+    const t = el.getAttribute('title');
+    if (t && !el.hasAttribute('aria-label')) el.setAttribute('aria-label', t);
+    el.removeAttribute('title');
+  }
+  migrate(live);
+
+  // 2) Kill any new titles that appear later (Live or HUD)
+  const obs = new MutationObserver(list => {
+    for (const m of list) {
+      if (m.type === 'attributes' && m.attributeName === 'title') {
+        migrate(m.target);
+      } else if (m.type === 'childList') {
+        m.addedNodes.forEach(n => {
+          if (n.nodeType === 1) {
+            migrate(n);
+            n.querySelectorAll?.('[title]').forEach(migrate);
+          }
+        });
+      }
+    }
+  });
+  obs.observe(document.body, {subtree:true, childList:true, attributes:true, attributeFilter:['title']});
+})();
+</script>
+<!-- END ▸ HU-FIX-TOOLTIP-02B -->
+<!-- HUMAN-UI-02 ▸ Quick Guide panel (no tooltips, always-visible help) -->
+<style>
+  /* ===== hu2: namespaced styles ===== */
+  #hu2-guide {
+    position: fixed; right: 24px; top: 152px;
+    width: 320px; max-height: calc(100vh - 200px); overflow: auto;
+    padding: 14px 16px; border-radius: 14px;
+    background: rgba(23,27,36,0.82); backdrop-filter: blur(4px);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #d4d8e1; font-size: 14px; line-height: 1.35;
+    z-index: 9999;
+  }
+  #hu2-guide h3 { margin: 0 0 8px; font-size: 15px; color: #fff; }
+  #hu2-guide h4 { margin: 10px 0 6px; font-size: 14px; color: #e9ecf2; }
+  #hu2-guide p  { margin: 6px 0; }
+  #hu2-guide ul { margin: 6px 0 10px 18px; padding: 0; }
+  #hu2-guide .hu2-row { display: flex; align-items: center; gap: 8px; }
+  #hu2-guide .hu2-hide { margin-left: auto; font-size: 12px; opacity: .8; cursor: pointer; text-decoration: underline; }
+  #hu2-guide .hu2-note { font-size: 12px; opacity: .8; margin-top: 8px; }
+  #hu2-guide code { background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 6px; }
+
+  #hu2-bubble {
+    position: fixed; right: 20px; bottom: 20px; z-index: 9999;
+    display: none; cursor: pointer;
+    background: rgba(23,27,36,0.9); color: #fff;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 999px; padding: 10px 12px; font-size: 14px;
+  }
+
+  /* Mobile/tablet: show as bottom sheet */
+  @media (max-width: 1024px) {
+    #hu2-guide {
+      right: 0; left: 0; bottom: 0; top: auto; margin: 0 auto;
+      width: 100%; max-width: none; max-height: 72vh;
+      border-radius: 16px 16px 0 0;
+    }
+  }
+</style>
+
+<div id="hu2-guide" role="complementary" aria-label="Quick guide">
+  <div class="hu2-row">
+    <h3>Quick guide</h3>
+    <a id="hu2-hide" class="hu2-hide" href="#">Hide</a>
+  </div>
+
+  <p><strong>How to read this page in 10 seconds.</strong></p>
+
+  <h4>1) Now &amp; Action (top line)</h4>
+  <ul>
+    <li><strong>Now:</strong> <em>bias number</em> + <em>news pace</em>. Bias 56 = mild; 50 = neutral. Headlines ≥3/hr = faster tape.</li>
+    <li><strong>Action:</strong> what to do until something changes:
+      <ul>
+        <li><strong>Act</strong> (≥65 or ≤35): take the trade if it matches the bias.</li>
+        <li><strong>Scout</strong> (55–64 / 36–45): test small; wait for a confirm.</li>
+        <li><strong>Wait</strong> (46–54): no edge; avoid chop.</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h4>2) The checklist under “Signal”</h4>
+  <ul>
+    <li><strong>Bias ✓</strong>: we found a valid bias number (e.g., “Bias 56”).</li>
+    <li><strong>Money flows ✓</strong>: BTC/ETH flows or USDT mints/burns are visible and updating.</li>
+    <li><strong>News pace</strong>: <em>Quiet</em> if &lt;3/hr; <em>Spicy</em> if <strong>≥3/hr</strong> (moves accelerate).</li>
+  </ul>
+  <p><em>Signal prints when bias + flows confirm; headlines heat speeds things up.</em></p>
+
+  <h4>3) Heartbeat (<code>Live • 0s</code>)</h4>
+  <p>Green dot = page is alive. Seconds show time since the last successful refresh.</p>
+
+  <h4>4) Read box (yellow)</h4>
+  <p>One-line translation: what helps, what hurts, and a confirm level (e.g., “Gold ±0.7% confirms”).</p>
+
+  <h4>5) What flips things</h4>
+  <ul>
+    <li><strong>Flows</strong>: BTC outflow + USDT mint → tailwind. BTC inflow + USDT burn → headwind.</li>
+    <li><strong>News</strong>: ≥3/hr = faster swings; shocks can override.</li>
+    <li><strong>USD/DXY</strong>: stronger USD = headwind for Gold; softer USD = tailwind.</li>
+  </ul>
+
+  <h4>6) Glossary (fast)</h4>
+  <ul>
+    <li><strong>Bias</strong>: directional tilt (0–100). 50 = neutral, 55–64 mild, ≥65 strong.</li>
+    <li><strong>Flows</strong>: BTC/ETH exchange flows + on-chain stablecoin mints/burns.</li>
+    <li><strong>Headlines/hr</strong>: fresh market-moving items per hour.</li>
+  </ul>
+
+  <p class="hu2-note"><strong>Note:</strong> Experimental signals — not investment advice.</p>
+</div>
+
+<button id="hu2-bubble" aria-label="Open Quick guide">?</button>
+
+<script>
+  (function () {
+    const KEY = 'hu2_guide_hidden_v1';
+    const guide  = document.getElementById('hu2-guide');
+    const hide   = document.getElementById('hu2-hide');
+    const bubble = document.getElementById('hu2-bubble');
+
+    function isMobile() {
+      return window.matchMedia('(max-width: 1024px)').matches;
+    }
+    function showGuide() {
+      guide.style.display = 'block';
+      bubble.style.display = 'none';
+      localStorage.removeItem(KEY);
+    }
+    function hideGuide() {
+      guide.style.display = 'none';
+      bubble.style.display = 'block';
+      localStorage.setItem(KEY, '1');
+    }
+    function applyState() {
+      if (localStorage.getItem(KEY) === '1') {
+        hideGuide();
+      } else {
+        showGuide();
+      }
+    }
+    // Events
+    hide.addEventListener('click', function (e) { e.preventDefault(); hideGuide(); });
+    bubble.addEventListener('click', showGuide);
+    window.addEventListener('resize', function(){
+      // keep bubble visible when hidden; panel responsive otherwise
+      if (guide.style.display === 'none') bubble.style.display = 'block';
+    });
+
+    // Kill all native title tooltips (we use this panel instead)
+    try { document.querySelectorAll('[title]').forEach(el => el.removeAttribute('title')); } catch(e) {}
+
+    applyState();
+  })();
+</script>
+<!-- END ▸ HUMAN-UI-02 (remove this block to rollback) -->
+
+</body>
+</html>

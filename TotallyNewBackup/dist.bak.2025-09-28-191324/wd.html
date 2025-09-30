@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sentimental Watchdog</title>
+<style>
+  :root {
+    color-scheme: dark light;
+    --bg:#0b1220; --panel:#0f172a; --border:#1f2b40; --muted:#9fb3c8; --text:#e5e7eb;
+    --accent:#60a5fa; --up:#86efac; --down:#fca5a5; --chip:#182235; --chip-br:#223049;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  .hero{background:linear-gradient(90deg,#0e1a2b,#1b2840 55%,#0e1a2b);border-bottom:1px solid var(--border);padding:14px 16px}
+  .hero .row{max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:12px;justify-content:space-between}
+  .brand{font-weight:800;letter-spacing:.3px;color:#dbeafe}
+  .meta{color:var(--muted);font-size:12px}
+  .btn{color:#93c5fd;text-decoration:none;border:1px solid #223049;padding:6px 10px;border-radius:999px}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px 16px}
+  h1{margin:0 0 10px;font-size:22px;color:#dbeafe}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+  .ttl{font-weight:700;margin:0 0 8px}
+  .badges{display:flex;gap:8px;margin:2px 0 10px}
+  .badge{display:inline-block;background:#0e1a2b;border:1px solid var(--chip-br);color:#cbd5e1;padding:2px 8px;border-radius:999px;font-size:12px}
+  .impchips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid var(--chip-br);background:var(--chip);font-size:12px}
+  .chip.up{color:var(--up);border-color:#14532d;background:#062b1a}
+  .chip.down{color:var(--down);border-color:#7f1d1d;background:#2b0b0b}
+  .chip.neutral{color:#a1a1aa;border-color:#2f364a;background:#1a2133}
+  .chip .k{opacity:.9}
+  .empty{color:var(--muted);padding:30px 0;text-align:center;border:1px dashed var(--border);border-radius:12px;background:#0e1627}
+  .coming{margin-top:16px;background:#0e1627;border:1px solid var(--border);border-radius:14px;padding:14px}
+  .coming h2{margin:0 0 8px;font-size:16px;color:#e5e7eb}
+  .coming p{margin:0 0 8px;color:#b7c6d9}
+  .coming ul{margin:0;padding-left:18px;color:#b7c6d9}
+  .coming li{margin:4px 0}
+  footer{margin-top:14px;color:#7387a1;font-size:12px}
+</style>
+</head><body>
+  <header class="hero">
+    <div class="row">
+      <div>
+        <div class="brand">Glasstrade • Watchdog</div>
+        <div class="meta">Updated 2025-09-28 19:10:01 SAST • Items: 0 • Window: 6h • Source: /api/watchdog/summary</div>
+      </div>
+      <a class="btn" href="/pro-hub">← Back to Pro Hub</a>
+    </div>
+  </header>
+  <main class="wrap">
+    <h1>Sentimental Watchdog</h1>
+    <section class="grid">
+      <div class='empty'>No items in the current window.</div>
+    </section>
+
+    <section class="coming">
+      <h2>Coming soon: AI Sentiment Engine (Guru)</h2>
+      <p>This page will hook into our on-box AI to turn global news, trends and flows into real-time <em>Bias</em> scores and actionable <em>Playbooks</em>.</p>
+      <ul>
+        <li><strong>Bias scores:</strong> 50 = neutral • 55–64 = mild • 65+ = strong.</li>
+        <li><strong>Playbooks:</strong> time-boxed windows (15–60 min) with entry/exit guidance.</li>
+        <li><strong>Impacts:</strong> chips show directional pressure — ▲ bullish, ▼ bearish.</li>
+        <li><strong>Alerts:</strong> Telegram + voice prompts; API & bot plugins (e.g., Exness/Kraken) for subscribers.</li>
+      </ul>
+      <p><strong>What you’re seeing now:</strong> the top themes detected over the last 6h; “heat” ≈ intensity, “count” ≈ clustered mentions/events, chips = per-asset impact.</p>
+    </section>
+
+    <footer>Auto-refreshed every 5 minutes by the server. No JavaScript required.</footer>
+  </main>
+</body></html>

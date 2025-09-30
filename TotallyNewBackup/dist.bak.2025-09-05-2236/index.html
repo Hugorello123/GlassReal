@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GlassTrade</title>
+
+    <!-- App bundle + CSS (leave these exactly as they are) -->
+    <script type="module" crossorigin src="/assets/index-BUKJwZoo.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-qhDdFTvK.css">
+
+    <!-- Black out the footer helper links (bottom of landing) -->
+    <style id="blackout-foot-links">
+      /* Targets: <div class="mt-40 text-center"> ...links... </div> */
+      .mt-40.text-center a{
+        color:#0a0a0a !important;
+        text-decoration-color: rgba(10,10,10,.35) !important;
+        border-color: rgba(10,10,10,.35) !important;
+      }
+      .mt-40.text-center a:hover,
+      .mt-40.text-center a:focus-visible{
+        color:#111 !important;
+        text-decoration-color: rgba(17,17,17,.45) !important;
+        border-color: rgba(17,17,17,.45) !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
