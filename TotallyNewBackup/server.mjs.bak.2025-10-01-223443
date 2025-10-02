@@ -282,10 +282,39 @@ app.listen(PORT, () => {
 const MACRO_PATH = "/var/lib/glasstrade/macro.json";
 const MACRO_TTL_MS = 60 * 60 * 1000;
 
+app.get("/api/macro/ust-vix", (req, res) => {
+  try {
+    if (!fs.existsSync(MACRO_PATH)) return res.status(200).json({});
+    const { mtimeMs } = fs.statSync(MACRO_PATH);
+    if (Date.now() - mtimeMs > MACRO_TTL_MS) return res.status(200).json({});
+    const data = JSON.parse(fs.readFileSync(MACRO_PATH, "utf8") || "{}");
+    if (data && data.ust2y != null && data.ust10y != null && data.curve_10y_2y == null) {
+      data.curve_10y_2y = Number((data.ust10y - data.ust2y).toFixed(2));
+    }
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json(data);
+  } catch (e) {
+    console.error("[macro]", e);
+    return res.status(200).json({});
+  }
+});
+// --- Flow endpoints (file-backed; returns zeros if missing/stale) ---
+const FLOW_PATH = "/var/lib/glasstrade/flow.json";
+const FLOW_TTL  = 60 * 60 * 1000; // 60m while testing
 
-    
-app.get("/api/macro/ust-vix", (req, res) => res.status(200).json({}));
+function readFlowSafe(){
+  try{
+    if (!fs.existsSync(FLOW_PATH)) return null;
+    const { mtimeMs } = fs.statSync(FLOW_PATH);
+    if (Date.now() - mtimeMs > FLOW_TTL) return null;
+    const raw = fs.readFileSync(FLOW_PATH, "utf8");
+    return JSON.parse(raw || "{}");
+  } catch { return null; }
+}
 
+const ZERO_BTC = { to:0, from:0, net:0, state:"quiet" };
+const ZERO_ETH = { to:0, from:0, net:0, state:"quiet" };
+const ZERO_USDTE = { mints:0, burns:0 };
 
 app.get("/api/flow/btc", (req,res) => {
   const f = readFlowSafe();

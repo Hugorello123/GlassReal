@@ -1,5 +1,6 @@
-node_modules/
-backup_vault/
-dist.full.*.tgz
-*.tgz
-.DS_Store
+**/node_modules/
+**/dist/downloads/
+**/.cache/
+**/*.tar.gz
+**/*.zip
+**/.DS_Store

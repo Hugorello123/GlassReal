@@ -282,10 +282,78 @@ app.listen(PORT, () => {
 const MACRO_PATH = "/var/lib/glasstrade/macro.json";
 const MACRO_TTL_MS = 60 * 60 * 1000;
 
+app.get("/api/macro/ust-vix", async (req,res) => {
+    try {
+      const u = "https://query2.finance.yahoo.com/v7/finance/quote?symbols=%5EUST2Y,%5EFVX,%5ETNX,%5EVIX";
+      const r = await fetch(u, { headers: {
+        "user-agent":"Mozilla/5.0",
+        "accept":"application/json",
+        "accept-language":"en-US,en;q=0.9",
+        "referer":"https://finance.yahoo.com/",
+        "connection":"keep-alive"
+      }});
+      const j = await r.json();
+      const rows = j?.quoteResponse?.result || [];
+      const map = Object.fromEntries(rows.map(o => [o.symbol, o.regularMarketPrice]));
+      const norm = (sym,v) => {
+        if (v==null || isNaN(v)) return null;
+        if (sym==="^FVX" || sym==="^TNX") return +(v/10).toFixed(2);
+        if (sym==="^UST2Y" && v>20)       return +(v/10).toFixed(2);
+        return +(+v).toFixed(2);
+      };
+      const two  = norm("^UST2Y", map["^UST2Y"]);
+      const five = norm("^FVX",   map["^FVX"]);
+      const ten  = norm("^TNX",   map["^TNX"]);
+      const vix  = norm("^VIX",   map["^VIX"]);
+      const curve = (two!=null && ten!=null) ? +(ten-two).toFixed(2) : null;
+      if ([two,five,ten,vix].some(x=>x!=null)) {
+        res.set("Cache-Control","no-store");
+        return res.status(200).json({
+          ust_2y: two, ust_5y: five, ust_10y: ten, curve_10y_2y: curve, vix,
+          updated: new Date().toISOString(), source: "yahoo"
+        });
+      }
+    } catch(e) { /* fall through */ }
+    // Fallback: read last-good file so page never blanks
+    try {
+      const p = require("path").join(__dirname,"dist","api","macro","ust-vix.json");
+      const raw = require("fs").readFileSync(p,"utf8");
+      res.set("Cache-Control","no-store");
+      return res.type("application/json").send(raw);
+    } catch(e) {
+      return res.status(200).json({ ust_2y:null, ust_5y:null, ust_10y:null, curve_10y_2y:null, vix:null, updated:new Date().toISOString(), source:"fallback-empty" });
+    }
+  });
+    const { mtimeMs } = fs.statSync(MACRO_PATH);
+    if (Date.now() - mtimeMs > MACRO_TTL_MS) return res.status(200).json({});
+    const data = JSON.parse(fs.readFileSync(MACRO_PATH, "utf8") || "{}");
+    if (data && data.ust2y != null && data.ust10y != null && data.curve_10y_2y == null) {
+      data.curve_10y_2y = Number((data.ust10y - data.ust2y).toFixed(2));
+    }
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json(data);
+  } catch (e) {
+    console.error("[macro]", e);
+    return res.status(200).json({});
+  }
+});
+// --- Flow endpoints (file-backed; returns zeros if missing/stale) ---
+const FLOW_PATH = "/var/lib/glasstrade/flow.json";
+const FLOW_TTL  = 60 * 60 * 1000; // 60m while testing
 
-    
-app.get("/api/macro/ust-vix", (req, res) => res.status(200).json({}));
+function readFlowSafe(){
+  try{
+    if (!fs.existsSync(FLOW_PATH)) return null;
+    const { mtimeMs } = fs.statSync(FLOW_PATH);
+    if (Date.now() - mtimeMs > FLOW_TTL) return null;
+    const raw = fs.readFileSync(FLOW_PATH, "utf8");
+    return JSON.parse(raw || "{}");
+  } catch { return null; }
+}
 
+const ZERO_BTC = { to:0, from:0, net:0, state:"quiet" };
+const ZERO_ETH = { to:0, from:0, net:0, state:"quiet" };
+const ZERO_USDTE = { mints:0, burns:0 };
 
 app.get("/api/flow/btc", (req,res) => {
   const f = readFlowSafe();
