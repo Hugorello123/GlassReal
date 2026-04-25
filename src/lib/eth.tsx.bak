@@ -1,0 +1,50 @@
+import React from "react";
+import { Sparklines, SparklinesLine } from "react-sparklines";
+import { useLiveData } from "../hooks/useLiveData";
+
+function toNum(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string") {
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+export default function EthPrice() {
+  const { data, loading } = useLiveData();
+
+  const price = toNum(data?.eth?.price);
+  const change = toNum(data?.eth?.change); // 24h %
+  const sparkRaw = Array.isArray(data?.eth?.sparklineData)
+    ? data!.eth!.sparklineData
+    : [];
+
+  const spark = sparkRaw
+    .map(toNum)
+    .filter((n): n is number => n !== null);
+
+  const isUp = (change ?? 0) >= 0;
+
+  return (
+    <div className="bg-gray-800 p-4 rounded-xl shadow-md text-white text-center">
+      <h3 className="text-lg font-semibold">
+        ETH Price {loading ? "🔄" : null}
+      </h3>
+
+      <p className="text-3xl">
+        {price != null ? `$${price.toLocaleString()}` : "—"}
+      </p>
+
+      <p className={`text-sm ${isUp ? "text-green-400" : "text-red-400"}`}>
+        {change != null ? `${isUp ? "+" : ""}${change.toFixed(2)}% 24h` : "—"}
+      </p>
+
+      <div className="mt-2">
+        <Sparklines data={spark.length ? spark : [price ?? 0]}>
+          <SparklinesLine color={isUp ? "#22c55e" : "#ef4444"} />
+        </Sparklines>
+      </div>
+    </div>
+  );
+}

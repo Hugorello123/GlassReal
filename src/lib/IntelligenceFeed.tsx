@@ -1,0 +1,340 @@
+import { useEffect, useState } from "react";
+import GuruDrawer from "../components/GuruDrawer";
+import GuruGoldChip from "../components/GuruGoldChip";
+import ChipsBar from "../components/ChipsBar";
+type Asset = 'gold' | 'btc' | 'wti';
+const ASSET: Asset = 'gold'; // change to 'btc' or 'wti' to switch the feed
+const HEADLINES: Record<Asset, string> = {
+  gold: '/api/gdelt/gold',
+  btc:  '/api/gdelt/btc',
+  wti:  '/api/gdelt/wti',
+};
+
+/* ---------- helpers & types ---------- */
+
+const FINANCE_SITES = [
+  "reuters",
+  "bloomberg",
+  "wsj",
+  "marketwatch",
+  "kitco",
+  "seekingalpha",
+  "financialpost",
+  "ft.com",
+  "cnbc",
+  "investing.com",
+  "fxstreet",
+  "forexlive",
+  "coindesk",
+  "cointelegraph",
+];
+
+const MUST_KEYWORDS = [
+  "gold",
+  "xau",
+  "bullion",
+  "comex",
+  "spot",
+  "futures",
+  "cpi",
+  "inflation",
+  "fed",
+  "rates",
+  "yields",
+  "dollar",
+  "usd",
+];
+
+type GdeltArticle = {
+  url: string;
+  title?: string;
+  seendate?: string; // 20250826T204500Z
+  domain?: string;
+  language?: string;
+};
+
+type FeedItem = {
+  id: string;
+  message: string;
+  time: number;
+  source: "headlines" | "whales";
+  url?: string;
+};
+
+function parseGdeltDate(s?: string): number {
+  if (!s) return Date.now();
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(s);
+  if (!m) return Date.now();
+  const [, Y, M, D, h, m2, s2] = m;
+  return Date.UTC(+Y, +M - 1, +D, +h, +m2, +s2);
+}
+
+function normalizeTitle(t: string): string {
+  return t.toLowerCase().replace(/\s+/g, " ").replace(/[^\w\s]/g, "").trim();
+}
+
+/** EN only, drop dup titles, newest first, cap limit */
+function normalizeGdelt(articles: GdeltArticle[], limit = 20): GdeltArticle[] {
+  const seen = new Set<string>();
+  const out: (GdeltArticle & { ts: number })[] = [];
+
+  for (const a of articles || []) {
+    if (a.language && !/^en/i.test(a.language)) continue;
+    const t = (a.title || a.url || "").trim();
+    if (!t) continue;
+
+    const key = normalizeTitle(t);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    out.push({ ...a, title: t, ts: parseGdeltDate(a.seendate) });
+  }
+
+  return out
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, limit)
+    .map(({ ts, ...rest }) => rest);
+}
+
+function keepFinance(domain = "", title = "") {
+  const t = title.toLowerCase();
+  const isFinance = FINANCE_SITES.some((s) => domain.includes(s));
+  const hasMust = MUST_KEYWORDS.some((k) => t.includes(k));
+  return isFinance || hasMust;
+}
+
+function relTime(ms: number) {
+  const d = Math.max(0, Date.now() - ms);
+  const m = Math.floor(d / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m ago`;
+}
+
+function fmt(n: number | null | undefined, digits = 2) {
+  if (n == null || Number.isNaN(n)) return "…";
+  return Number(n).toFixed(digits);
+}
+
+function riskFromBtcChange(chg?: number | null) {
+  if (chg == null) return "neutral";
+  if (chg > 0.5) return "risk-on";
+  if (chg < -0.5) return "risk-off";
+  return "neutral";
+}
+
+/* ---------- component ---------- */
+
+const IntelligenceFeed = ({ onAskGuru: _onAskGuru }: { onAskGuru?: (title: string) => void } = {}) => {
+  const [items, setItems] = useState<FeedItem[]>([]);
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+
+  // macro snapshot
+  const [dxy, setDxy] = useState<number | null>(null);
+  const [y10, setY10] = useState<number | null>(null);
+  const [btc, setBtc] = useState<number | null>(null);
+  const [btcChg, setBtcChg] = useState<number | null>(null);
+
+  // --- Macro snapshot (DXY, US10Y, BTC) ---
+  async function loadMacro() {
+    try {
+      const dxyJson = await fetch("/macro/dxy").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const y10Json = await fetch("/macro/us10y").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const btcJson = await fetch(
+        "/api/cg/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true"
+      )
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+
+      setDxy(dxyJson?.symbols?.[0]?.close ?? null);
+      setY10(y10Json?.symbols?.[0]?.close ?? null);
+      setBtc(btcJson?.bitcoin?.usd ?? null);
+      setBtcChg(btcJson?.bitcoin?.usd_24h_change ?? null);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // --- Feed loader (headlines + whales) ---
+  async function load() {
+    try {
+      // 1) Headlines (via nginx proxy -> GDELT)
+      let newsJson: any = { articles: [] };
+      try {
+      const r = await fetch(HEADLINES[ASSET]);
+        newsJson = r.ok ? await r.json() : { articles: [] };
+      } catch {
+        /* keep default */
+      }
+
+      const raw: GdeltArticle[] = Array.isArray(newsJson?.articles) ? newsJson.articles : [];
+      const normalized = normalizeGdelt(raw, 25).filter((a) =>
+        keepFinance(a?.domain ?? "", a?.title ?? "")
+      );
+
+      const news: FeedItem[] = normalized.map((a, i) => ({
+        id: `n${a.seendate || i}`,
+        message: a.title || a.url,
+        time: a.seendate ? parseGdeltDate(a.seendate) : Date.now(),
+        source: "headlines",
+        url: a.url,
+      }));
+
+      // 2) Whales (your Node endpoint)
+      let whalesJson: any = { items: [] };
+      try {
+        const r = await fetch("/api/live/whales");
+        whalesJson = r.ok ? await r.json() : { items: [] };
+      } catch {
+        /* keep default */
+      }
+
+      const whales: FeedItem[] = (Array.isArray(whalesJson?.items) ? whalesJson.items : []).map((w: any) => ({
+        id: `w${w.ts || Math.random()}`,
+        message: w.message || w.msg || w.symbol || "Large flow detected on-chain",
+        time: w.ts || Date.now(),
+        source: "whales",
+        url: w.url,
+      }));
+
+      // 3) Merge, sort, cap
+      setItems(
+        [...news, ...whales]
+          .filter((x) => x.message && x.time)
+          .sort((a, b) => b.time - a.time)
+          .slice(0, 50)
+      );
+      setLastUpdate(Date.now());
+    } catch {
+      /* swallow */
+    }
+  }
+
+  useEffect(() => {
+    load();
+    loadMacro();
+    const t1 = setInterval(load, 60_000);
+    const t2 = setInterval(loadMacro, 60_000);
+    return () => {
+      clearInterval(t1);
+      clearInterval(t2);
+    };
+  }, []);
+
+  const quickPrompts = [
+    "Why is gold neutral right now?",
+    "Any risk-off catalysts in the next 24h?",
+    "What flips the bias the other way?",
+  ];
+
+  const riskLabel = riskFromBtcChange(btcChg);
+
+  return (
+    <>
+      <div className="bg-white/10 p-4 rounded-xl">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">
+            🧠 Market Intelligence Feed
+          </h2>
+          <div className="mt-1">
+            <GuruGoldChip />
+          </div>
+        </div>
+        <ChipsBar />
+
+        {/* EMPTY STATE */}
+        {items.length === 0 ? (
+          <div className="mt-4 space-y-3">
+            <div className="p-3 bg-white/5 rounded text-gray-200 text-sm">
+              <div className="flex items-center justify-between">
+                <span>
+                  Quiet for now — scanning news & on-chain every minute.
+                  {lastUpdate && <> Last update {new Date(lastUpdate).toLocaleTimeString()}.</>}
+                </span>
+                <button
+                  className="text-xs underline text-gray-300 hover:text-white"
+                  onClick={() => load()}
+                >
+                  Refresh now
+                </button>
+              </div>
+              {/* Macro snapshot line */}
+              <div className="px-1 text-xs text-gray-300 mt-2">
+                macro: DXY {fmt(dxy)} • US10Y {fmt(y10, 2)}% • BTC ${fmt(btc, 0)} → {riskLabel}
+              </div>
+            </div>
+
+            {/* Quick prompts */}
+            <div className="flex flex-wrap gap-2 pt-1">
+              {quickPrompts.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => setSelectedTopic(q)}
+                  className="text-xs rounded-full border border-white/15 bg-white/5 px-3 py-1.5 hover:bg-white/10"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+
+            {/* Calm card so the list looks alive */}
+            <div className="p-3 bg-white/5 rounded text-white">
+              <div className="font-medium">Calm tape: no unusual gold headlines in the last hour</div>
+              <div className="text-xs text-gray-400 mb-2">
+                We’ll surface anything meaningful automatically.
+              </div>
+              <button
+                onClick={() => setSelectedTopic("What could change the gold bias in the next 24h?")}
+                className="text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700"
+              >
+                ⭐ Ask the Guru
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* NORMAL LIST */
+          <div className="space-y-4 mt-4">
+            {items.map((item) => (
+              <div key={item.id} className="p-3 bg-white/5 rounded text-white">
+                <div className="font-medium">
+                  {item.message}
+                  {item.url && (
+                    <a
+                      className="ml-2 text-xs text-blue-300 underline"
+                      href={item.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      source
+                    </a>
+                  )}
+                </div>
+                <div className="text-xs text-gray-400 mb-2">
+                  {relTime(item.time)} • {item.source}
+                </div>
+                <button
+                  onClick={() => setSelectedTopic(item.message)}
+                  className="text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700"
+                >
+                  ⭐ Ask the Guru
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+     {selectedTopic && (
+  <GuruDrawer
+    topic={selectedTopic}
+    onClose={() => setSelectedTopic(null)}
+  />
+)}
+
+    </>
+  );
+};
+
+export default IntelligenceFeed;
