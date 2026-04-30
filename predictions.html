@@ -1,0 +1,314 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Sentotrade — Predictions</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  a { color: #22d3ee; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .container { max-width: 1200px; margin: 0 auto; }
+  .nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .nav h1 { font-size: 1.5rem; background: linear-gradient(90deg, #22d3ee, #34d399); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 14px 16px;
+    text-align: center;
+  }
+  .stat-card .value { font-size: 1.4rem; font-weight: 700; }
+  .stat-card .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; margin-top: 4px; }
+  .stat-card.hit .value { color: #34d399; }
+  .stat-card.missed .value { color: #f87171; }
+  .stat-card.partial .value { color: #fbbf24; }
+  .stat-card.open .value { color: #94a3b8; }
+  .stat-card.total .value { color: #22d3ee; }
+  .stat-card.rate .value { color: #a78bfa; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab {
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.03);
+    cursor: pointer;
+    font-size: 0.8rem;
+    opacity: 0.6;
+  }
+  .tab.active { background: rgba(34,211,238,0.15); border-color: rgba(34,211,238,0.3); opacity: 1; color: #22d3ee; }
+  .table-wrap {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th {
+    text-align: left;
+    padding: 12px 14px;
+    background: rgba(255,255,255,0.04);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    letter-spacing: 0.05em;
+    opacity: 0.7;
+  }
+  td { padding: 12px 14px; border-top: 1px solid rgba(255,255,255,0.04); }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+  .badge-long { background: rgba(52,211,153,0.15); color: #34d399; }
+  .badge-short { background: rgba(248,113,113,0.15); color: #f87171; }
+  .badge-open { background: rgba(148,163,184,0.12); color: #94a3b8; }
+  .badge-hit { background: rgba(52,211,153,0.12); color: #34d399; }
+  .badge-missed { background: rgba(248,113,113,0.12); color: #f87171; }
+  .badge-partial { background: rgba(251,191,36,0.12); color: #fbbf24; }
+  .resolve-btns { display: flex; gap: 4px; }
+  .resolve-btns button {
+    padding: 3px 8px;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    cursor: pointer;
+    opacity: 0.7;
+  }
+  .resolve-btns button:hover { opacity: 1; }
+  .btn-hit { background: rgba(52,211,153,0.2); color: #34d399; }
+  .btn-missed { background: rgba(248,113,113,0.2); color: #f87171; }
+  .btn-partial { background: rgba(251,191,36,0.2); color: #fbbf24; }
+  .target { opacity: 0.8; }
+  .why { max-width: 260px; opacity: 0.7; line-height: 1.3; }
+  .empty { text-align: center; padding: 40px; opacity: 0.4; font-size: 0.9rem; }
+  .manual-form {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 18px;
+  }
+  .manual-form h3 { font-size: 0.95rem; margin-bottom: 14px; opacity: 0.9; }
+  .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 10px; }
+  .form-row input, .form-row select, .form-row textarea {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: #e2e8f0;
+    font-size: 0.8rem;
+    width: 100%;
+  }
+  .form-row input:focus, .form-row select:focus, .form-row textarea:focus { outline: none; border-color: #22d3ee; }
+  .form-row textarea { min-height: 60px; resize: vertical; }
+  .submit-btn {
+    background: linear-gradient(90deg, #22d3ee, #34d399);
+    border: none;
+    border-radius: 6px;
+    padding: 8px 18px;
+    color: #0a0a0a;
+    font-weight: 700;
+    font-size: 0.8rem;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+  .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .refresh-hint { text-align: center; font-size: 0.7rem; opacity: 0.35; margin-top: 8px; }
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.2); border-top-color: #22d3ee; border-radius: 50%; animation: spin 0.6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+<script src="https://www.kimi.com/sdk-seed.js" defer=""></script></head>
+<body>
+<div class="container">
+  <div class="nav">
+    <h1>Predictions Tracker</h1>
+    <a href="/">Back to Dashboard</a>
+  </div>
+
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-card total"><div class="value">-</div><div class="label">Total</div></div>
+    <div class="stat-card hit"><div class="value">-</div><div class="label">Hit</div></div>
+    <div class="stat-card missed"><div class="value">-</div><div class="label">Missed</div></div>
+    <div class="stat-card partial"><div class="value">-</div><div class="label">Partial</div></div>
+    <div class="stat-card open"><div class="value">-</div><div class="label">Open</div></div>
+    <div class="stat-card rate"><div class="value">-</div><div class="label">Win Rate</div></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-filter="all" onclick="setFilter(&#39;all&#39;)">All</div>
+    <div class="tab" data-filter="open" onclick="setFilter(&#39;open&#39;)">Open</div>
+    <div class="tab" data-filter="resolved" onclick="setFilter(&#39;resolved&#39;)">Resolved</div>
+  </div>
+
+  <div class="table-wrap">
+    <table id="predTable">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Asset</th>
+          <th>Call</th>
+          <th>Entry</th>
+          <th>Target</th>
+          <th>Why</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="predBody"><tr><td colspan="8" class="empty"><span class="spinner"></span> Loading predictions...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="manual-form">
+    <h3>Add Manual Prediction</h3>
+    <div class="form-row">
+      <select id="mAsset"><option value="BTC">BTC</option><option value="ETH">ETH</option><option value="Gold">Gold</option><option value="TSLA">TSLA</option></select>
+      <select id="mCall"><option value="Long">Long</option><option value="Short">Short</option></select>
+      <input type="number" id="mEntry" placeholder="Entry price" step="0.01"/>
+      <input type="number" id="mTarget" placeholder="Target price" step="0.01"/>
+    </div>
+    <div class="form-row">
+      <textarea id="mWhy" placeholder="Reason / notes"></textarea>
+    </div>
+    <button class="submit-btn" id="mSubmit" onclick="addManual()">Add Prediction</button>
+  </div>
+
+  <div class="refresh-hint">Auto-refreshes every 30s. Last updated: <span id="lastUp">never</span></div>
+</div>
+
+<script>
+let currentFilter = 'all';
+let allItems = [];
+
+async function loadStats() {
+  try {
+    const res = await fetch('/api/stats/summary', { cache: 'no-store' });
+    if (!res.ok) return;
+    const d = await res.json();
+    const p = d.predictionRecord || {};
+    const total = (p.hit || 0) + (p.missed || 0) + (p.partial || 0) + (p.open || 0);
+    const resolved = (p.hit || 0) + (p.missed || 0) + (p.partial || 0);
+    const rate = resolved ? Math.round(((p.hit || 0) / resolved) * 100) : 0;
+    document.querySelector('.stat-card.total .value').textContent = total;
+    document.querySelector('.stat-card.hit .value').textContent = p.hit || 0;
+    document.querySelector('.stat-card.missed .value').textContent = p.missed || 0;
+    document.querySelector('.stat-card.partial .value').textContent = p.partial || 0;
+    document.querySelector('.stat-card.open .value').textContent = p.open || 0;
+    document.querySelector('.stat-card.rate .value').textContent = rate + '%';
+  } catch (e) { console.log('stats error', e); }
+}
+
+async function loadPredictions() {
+  try {
+    const res = await fetch('/api/predictions', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    allItems = d.items || [];
+    render();
+    loadStats();
+    document.getElementById('lastUp').textContent = new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('predBody').innerHTML = `<tr><td colspan="8" class="empty">Failed to load predictions: ${e.message}</td></tr>`;
+  }
+}
+
+function render() {
+  const tbody = document.getElementById('predBody');
+  let filtered = allItems;
+  if (currentFilter === 'open') filtered = allItems.filter(i => i.status === 'open');
+  if (currentFilter === 'resolved') filtered = allItems.filter(i => i.status !== 'open');
+  
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">No ${currentFilter} predictions.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.slice().reverse().map(p => {
+    const dt = new Date(p.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const callClass = p.call === 'Long' ? 'badge-long' : 'badge-short';
+    const statusClass = p.status === 'hit' ? 'badge-hit' : p.status === 'missed' ? 'badge-missed' : p.status === 'partial' ? 'badge-partial' : 'badge-open';
+    const targetDisplay = p.target ? `${p.target} <span class="target">${p.targetPct || ''}</span>` : '—';
+    const resolveBtns = p.status === 'open' ? `
+      <div class="resolve-btns">
+        <button class="btn-hit" onclick="resolve('${p.id}', 'hit')">Hit</button>
+        <button class="btn-partial" onclick="resolve('${p.id}', 'partial')">Partial</button>
+        <button class="btn-missed" onclick="resolve('${p.id}', 'missed')">Missed</button>
+      </div>` : '';
+    return `<tr>
+      <td>${dt}</td>
+      <td><strong>${p.asset}</strong></td>
+      <td><span class="badge ${callClass}">${p.call}</span></td>
+      <td>${p.entry ? '$' + Number(p.entry).toLocaleString() : '—'}</td>
+      <td>${targetDisplay}</td>
+      <td class="why">${p.why || ''}</td>
+      <td><span class="badge ${statusClass}">${p.status || 'open'}</span></td>
+      <td>${resolveBtns}</td>
+    </tr>`;
+  }).join('');
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.filter === f));
+  render();
+}
+
+async function resolve(id, status) {
+  if (!confirm('Mark as ' + status + '?')) return;
+  try {
+    const res = await fetch('/api/predictions/' + id, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    if (res.ok) { loadPredictions(); }
+    else { alert('Failed: ' + res.status); }
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function addManual() {
+  const btn = document.getElementById('mSubmit');
+  btn.disabled = true;
+  const asset = document.getElementById('mAsset').value;
+  const call = document.getElementById('mCall').value;
+  const entry = parseFloat(document.getElementById('mEntry').value);
+  const target = parseFloat(document.getElementById('mTarget').value);
+  const why = document.getElementById('mWhy').value;
+  if (!entry || !target) { alert('Enter entry and target prices'); btn.disabled = false; return; }
+  
+  try {
+    const res = await fetch('/api/predictions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ asset, call, price: entry, tp: target, sl: null, why })
+    });
+    if (res.ok) {
+      document.getElementById('mEntry').value = '';
+      document.getElementById('mTarget').value = '';
+      document.getElementById('mWhy').value = '';
+      loadPredictions();
+    } else { alert('Failed: ' + res.status); }
+  } catch (e) { alert('Error: ' + e.message); }
+  btn.disabled = false;
+}
+
+loadPredictions();
+setInterval(loadPredictions, 30000);
+</script>
+
+
+</body></html>
