@@ -18,6 +18,7 @@ import ForexBox from "@/components/ForexBox";
 import IntelligenceFeed from "@/lib/IntelligenceFeed";
 import GuruDrawer from "@/components/GuruDrawer";
 import NavBar from "@/components/NavBar";
+import StatsSummarySplitCard from "@/components/StatsSummarySplitCard";
 
 export default function Dashboard() {
   const [guruTopic, setGuruTopic] = useState<string | undefined>(undefined);
@@ -63,6 +64,8 @@ export default function Dashboard() {
             Large unconfirmed BTC transfers (≥ $2M). "top" = largest single output; "outs" = number of outputs.
           </div>
         </section>
+
+        <StatsSummarySplitCard />
 
         <EquitiesCommoditiesPanel />
 

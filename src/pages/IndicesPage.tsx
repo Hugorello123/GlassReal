@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import NavBar from "@/components/NavBar";
+import { apiUrl } from "@/lib/sameOriginApi";
 
 interface IndexData {
   name: string;
@@ -12,19 +13,6 @@ interface IndexData {
   status: "bullish" | "bearish" | "neutral";
 }
 
-const INDEX_MAP: Record<string, { name: string; yahoo: string }> = {
-  "^GSPC": { name: "S&P 500", yahoo: "%5EGSPC" },
-  "^IXIC": { name: "Nasdaq 100", yahoo: "%5EIXIC" },
-  "^DJI": { name: "Dow Jones", yahoo: "%5EDJI" },
-  "^RUT": { name: "Russell 2000", yahoo: "%5ERUT" },
-  "^VIX": { name: "VIX", yahoo: "%5EVIX" },
-};
-
-function fmt(n: number | null): string {
-  if (n === null || !Number.isFinite(n)) return "—";
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 export default function IndicesPage() {
   const [indices, setIndices] = useState<IndexData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,37 +21,31 @@ export default function IndicesPage() {
   useEffect(() => {
     async function load() {
       try {
-        const symbols = Object.values(INDEX_MAP).map((m) => m.yahoo).join(",");
-        const res = await fetch(
-          `https://query1.finance.yahoo.com/v8/finance/chart/${symbols}?interval=1d&range=1d`,
-          { headers: { Accept: "application/json" } }
-        );
-        if (!res.ok) throw new Error("Yahoo Finance unavailable");
-        const data = await res.json();
-
-        const charts = Array.isArray(data?.chart?.result)
-          ? data.chart.result
-          : [data?.chart?.result].filter(Boolean);
-
-        const out: IndexData[] = [];
-        for (const c of charts) {
-          const meta = c?.meta;
-          if (!meta) continue;
-          const price = meta.regularMarketPrice ?? meta.previousClose ?? null;
-          const prev = meta.chartPreviousClose ?? meta.previousClose ?? price;
-          const ch = price && prev ? price - prev : 0;
-          const chPct = prev ? (ch / prev) * 100 : 0;
-          const status: IndexData["status"] = chPct > 0.1 ? "bullish" : chPct < -0.1 ? "bearish" : "neutral";
-          out.push({
-            name: meta.shortName || meta.symbol || "Index",
-            ticker: meta.symbol?.replace("^", "") || "—",
-            price: fmt(price),
-            change: `${ch >= 0 ? "+" : ""}${fmt(ch)}`,
-            changePct: `${chPct >= 0 ? "+" : ""}${chPct.toFixed(2)}%`,
-            status,
-          });
+        const res = await fetch(apiUrl("/api/indices"), {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error(`Indices API ${res.status}`);
+        const rawText = await res.text();
+        const ct = res.headers.get("content-type") || "";
+        const looksHtml = /^\s*</.test(rawText) || rawText.includes("<!DOCTYPE");
+        if (looksHtml || !ct.includes("application/json")) {
+          throw new Error(
+            "Indices API returned HTML, not JSON — /api/* is not reaching Node. Fix nginx (or proxy): pass /api/ to the Node process, not static try_files / index.html."
+          );
         }
+        const data = JSON.parse(rawText);
+        const rows = Array.isArray(data?.indices) ? data.indices : [];
+        const out: IndexData[] = rows.map((row: any) => ({
+          name: String(row.name || "—"),
+          ticker: String(row.ticker || "—"),
+          price: String(row.price ?? "—"),
+          change: String(row.change ?? "—"),
+          changePct: String(row.changePct ?? "—"),
+          status: (row.status as IndexData["status"]) || "neutral",
+        }));
         setIndices(out.length ? out : []);
+        if (!out.length) setError("No index data returned");
       } catch (e: any) {
         setError(e.message || "Failed to load indices");
       } finally {
@@ -83,7 +65,7 @@ export default function IndicesPage() {
             {loading && <span className="text-xs text-gray-500">Loading…</span>}
           </div>
           <p className="text-gray-400 mb-8">
-            Live index levels from Yahoo Finance. Updates on page load.
+            Live index levels from <code className="text-cyan-400/90">/api/indices</code> (server-side Yahoo chart). Updates on page load.
           </p>
 
           {error && (

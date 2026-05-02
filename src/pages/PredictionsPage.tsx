@@ -1,7 +1,8 @@
 // PredictionsPage.tsx — real prediction tracker. No fake history.
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router";
 import NavBar from "@/components/NavBar";
+import { apiUrl } from "@/lib/sameOriginApi";
 
 interface Prediction {
   id: string;
@@ -25,6 +26,9 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
 
 const STORAGE_KEY = "sentotrade_predictions";
 
+/** When `true`, hides the localStorage win-rate block (use when server predictions UI is primary). Set in `.env`: `VITE_HIDE_LOCAL_PREDICTIONS=true` */
+const HIDE_LOCAL_PREDICTION_TRACKER = import.meta.env.VITE_HIDE_LOCAL_PREDICTIONS === "true";
+
 function loadPredictions(): Prediction[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -38,10 +42,77 @@ function savePredictions(list: Prediction[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 }
 
+/** Rows from `GET /api/predictions` (engine + resolver). */
+interface ServerSignal {
+  id?: string;
+  time?: string;
+  asset?: string;
+  call?: string;
+  entry?: number | string;
+  target?: number | string;
+  targetPct?: string;
+  timeframe?: string;
+  horizon?: string;
+  why?: string;
+  status?: string;
+  outcome?: string;
+}
+
+function formatSignalTime(iso: string | undefined) {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return String(iso);
+  return new Date(t).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function formatServerNum(x: number | string | undefined) {
+  if (x == null || x === "") return "—";
+  if (typeof x === "number" && Number.isFinite(x))
+    return x.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return String(x);
+}
+
+function serverStatusBadge(st: string | undefined) {
+  const k = String(st || "open").toLowerCase();
+  return STATUS_COLORS[k] || { bg: "bg-white/10", text: "text-gray-300", label: st || "—" };
+}
+
+/** Default rows shown for server history (newest first); avoids a huge scroll. */
+const SERVER_RECENT_COUNT = 25;
+
 export default function PredictionsPage() {
   const [predictions, setPredictions] = useState<Prediction[]>(loadPredictions);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ asset: "", call: "Long" as "Long" | "Short", target: "", timeframe: "", notes: "" });
+  const [serverItems, setServerItems] = useState<ServerSignal[]>([]);
+  const [serverLoading, setServerLoading] = useState(true);
+  const [serverErr, setServerErr] = useState("");
+  const [serverShowAll, setServerShowAll] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(apiUrl("/api/predictions?limit=100"), {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error(`Predictions API ${res.status}`);
+        const ct = res.headers.get("content-type") || "";
+        if (!ct.includes("application/json")) throw new Error("Predictions API returned non-JSON (check server / proxy)");
+        const data = await res.json();
+        const items = Array.isArray(data?.items) ? data.items : [];
+        if (!cancelled) setServerItems(items as ServerSignal[]);
+      } catch (e: unknown) {
+        if (!cancelled) setServerErr(e instanceof Error ? e.message : "Failed to load server signals");
+      } finally {
+        if (!cancelled) setServerLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     savePredictions(predictions);
@@ -51,6 +122,11 @@ export default function PredictionsPage() {
   const partialCount = predictions.filter((p) => p.status === "partial").length;
   const totalClosed = predictions.filter((p) => p.status !== "open" && p.status !== "void").length;
   const winRate = totalClosed > 0 ? Math.round(((hitCount + partialCount * 0.5) / totalClosed) * 100) : 0;
+
+  const serverDisplayed =
+    serverShowAll || serverItems.length <= SERVER_RECENT_COUNT
+      ? serverItems
+      : serverItems.slice(0, SERVER_RECENT_COUNT);
 
   function addPrediction() {
     if (!form.asset || !form.target || !form.timeframe) return;
@@ -87,16 +163,137 @@ export default function PredictionsPage() {
         <div className="max-w-4xl mx-auto px-6 py-10">
           <div className="flex items-center justify-between mb-2">
             <h1 className="text-4xl font-bold">🔭 Predictions</h1>
-            <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-center">
-              <div className="text-2xl font-bold text-green-400">{winRate}%</div>
-              <div className="text-xs text-gray-500">Win Rate</div>
-            </div>
+            {!HIDE_LOCAL_PREDICTION_TRACKER && (
+              <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-center max-w-[140px]">
+                <div className="text-2xl font-bold text-green-400">{winRate}%</div>
+                <div className="text-xs text-gray-500">Win rate</div>
+                <div className="text-[10px] text-gray-600 leading-tight mt-1">Manual rows only — not the server list</div>
+              </div>
+            )}
           </div>
-          <p className="text-gray-400 mb-8">
-            Track your market calls. Add a prediction, then score the outcome when it resolves.
-          </p>
+
+          <section className="mb-10" aria-labelledby="server-signals-heading">
+            <h2 id="server-signals-heading" className="text-lg font-semibold text-white mb-1">
+              Live signals (server)
+            </h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Auto-generated from live prices; times use your device&apos;s timezone.
+            </p>
+            {serverErr && (
+              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-200 px-4 py-3 rounded-lg mb-4 text-sm">
+                {serverErr} — refresh the page to retry.
+              </div>
+            )}
+            {serverLoading ? (
+              <p className="text-sm text-gray-500">Loading server signals…</p>
+            ) : serverItems.length === 0 ? (
+              <p className="text-sm text-gray-500 border border-white/10 rounded-lg px-4 py-3 bg-white/[0.03]">
+                No server signals to show yet (engine may be between runs, or filters are quiet).
+              </p>
+            ) : (
+              <div className="space-y-2">
+              <div className="overflow-x-auto rounded-xl border border-cyan-500/20 bg-white/[0.03] shadow-lg shadow-black/20">
+                <table className="w-full min-w-[720px] text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 bg-black/40 text-left">
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                        Time
+                      </th>
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                        Asset
+                      </th>
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                        Call
+                      </th>
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                        Entry
+                      </th>
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                        Target
+                      </th>
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                        Window
+                      </th>
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                        Status
+                      </th>
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[140px]">
+                        Outcome
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {serverDisplayed.map((row, ri) => {
+                      const st = serverStatusBadge(row.status);
+                      const call = String(row.call || "—");
+                      const win = row.horizon || row.timeframe || "—";
+                      return (
+                        <Fragment key={row.id ? `${row.id}-${ri}` : `srv-${ri}-${row.time}-${row.asset}`}>
+                          <tr className="border-b border-white/5 hover:bg-white/[0.04]">
+                            <td className="px-3 py-3 text-gray-400 whitespace-nowrap text-xs">
+                              {formatSignalTime(row.time)}
+                            </td>
+                            <td className="px-3 py-3 font-semibold text-white whitespace-nowrap">{row.asset || "—"}</td>
+                            <td
+                              className={`px-3 py-3 font-semibold whitespace-nowrap ${
+                                call.toLowerCase() === "short" ? "text-red-400" : "text-green-400"
+                              }`}
+                            >
+                              {call}
+                            </td>
+                            <td className="px-3 py-3 text-gray-200 tabular-nums">{formatServerNum(row.entry)}</td>
+                            <td className="px-3 py-3 text-gray-200 tabular-nums">
+                              {formatServerNum(row.target)}
+                              {row.targetPct ? (
+                                <span className="text-gray-500 text-xs ml-1">({row.targetPct})</span>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-3 text-gray-300 text-xs">{win}</td>
+                            <td className="px-3 py-3 whitespace-nowrap">
+                              <span className={`text-xs px-2 py-1 rounded-full border ${st.bg} ${st.text}`}>{st.label}</span>
+                            </td>
+                            <td className="px-3 py-3 text-gray-300 text-xs max-w-[220px]">{row.outcome || "—"}</td>
+                          </tr>
+                          {row.why ? (
+                            <tr className="border-b border-white/5 bg-black/25">
+                              <td colSpan={8} className="px-3 py-2 text-xs text-gray-500">
+                                {row.why}
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {serverItems.length > SERVER_RECENT_COUNT ? (
+                <button
+                  type="button"
+                  onClick={() => setServerShowAll((v) => !v)}
+                  className="text-sm text-cyan-400 hover:text-cyan-300 underline-offset-2 hover:underline"
+                >
+                  {serverShowAll
+                    ? "Show fewer rows"
+                    : `Show full history (${serverItems.length} rows)`}
+                </button>
+              ) : null}
+              </div>
+            )}
+          </section>
+
+          {HIDE_LOCAL_PREDICTION_TRACKER ? (
+            <p className="text-sm text-gray-500 mb-8 border border-white/10 rounded-lg px-4 py-3 bg-white/[0.03]">
+              Personal call tracker (browser-only) is hidden in this build. Your manual list is not shown below.
+            </p>
+          ) : (
+            <p className="text-gray-400 mb-8">
+              Track your market calls below. Add a prediction, then score the outcome when it resolves.
+            </p>
+          )}
 
           {/* Add button */}
+          {!HIDE_LOCAL_PREDICTION_TRACKER && (
           <div className="mb-6">
             <button
               onClick={() => setShowForm(!showForm)}
@@ -105,9 +302,10 @@ export default function PredictionsPage() {
               {showForm ? "Cancel" : "+ Add Prediction"}
             </button>
           </div>
+          )}
 
           {/* Form */}
-          {showForm && (
+          {!HIDE_LOCAL_PREDICTION_TRACKER && showForm && (
             <div className="bg-white/5 border border-white/10 rounded-xl p-5 mb-6 space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -168,73 +366,98 @@ export default function PredictionsPage() {
           )}
 
           {/* List */}
-          {predictions.length === 0 ? (
+          {!HIDE_LOCAL_PREDICTION_TRACKER && predictions.length === 0 ? (
             <div className="bg-white/5 border border-white/10 rounded-xl p-8 text-center">
               <p className="text-gray-400">No predictions tracked yet.</p>
               <p className="text-xs text-gray-500 mt-2">
                 Click "Add Prediction" to start tracking your calls. All data stays in your browser.
               </p>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {predictions.map((p) => {
-                const st = STATUS_COLORS[p.status];
-                return (
-                  <div key={p.id} className="bg-white/5 border border-white/10 rounded-xl p-4 hover:border-white/20 transition">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold">{p.asset}</span>
-                        <span className={`text-xs px-2 py-1 rounded-full border ${st.bg} ${st.text}`}>
-                          {st.label}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-500">{p.date}</span>
-                        <button
-                          onClick={() => deletePrediction(p.id)}
-                          className="text-xs text-red-400 hover:text-red-300 px-2 py-1"
-                          title="Delete"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm mb-3">
-                      <div>
-                        <span className="text-gray-500">Call:</span>
-                        <span className={`ml-1 font-semibold ${p.call === "Long" ? "text-green-400" : "text-red-400"}`}>
-                          {p.call}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Target:</span>
-                        <span className="ml-1">{p.target}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Window:</span>
-                        <span className="ml-1">{p.timeframe}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Outcome:</span>
-                        <span className="ml-1 text-gray-300">{p.outcome}</span>
-                      </div>
-                    </div>
-                    {p.notes && <p className="text-xs text-gray-500 mb-2">{p.notes}</p>}
-
-                    {/* Status actions */}
-                    {p.status === "open" && (
-                      <div className="flex gap-2">
-                        <button onClick={() => updateStatus(p.id, "hit", "Target reached")} className="text-xs bg-green-600/20 text-green-400 border border-green-500/30 px-3 py-1 rounded hover:bg-green-600/30">Mark Hit</button>
-                        <button onClick={() => updateStatus(p.id, "partial", "Partial reach")} className="text-xs bg-amber-600/20 text-amber-400 border border-amber-500/30 px-3 py-1 rounded hover:bg-amber-600/30">Mark Partial</button>
-                        <button onClick={() => updateStatus(p.id, "missed", "Target not reached")} className="text-xs bg-red-600/20 text-red-400 border border-red-500/30 px-3 py-1 rounded hover:bg-red-600/30">Mark Missed</button>
-                        <button onClick={() => updateStatus(p.id, "void", "Invalidated")} className="text-xs bg-gray-600/20 text-gray-400 border border-gray-500/30 px-3 py-1 rounded hover:bg-gray-600/30">Void</button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+          ) : !HIDE_LOCAL_PREDICTION_TRACKER ? (
+            <div className="overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03] shadow-lg shadow-black/20">
+              <table className="w-full min-w-[640px] text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-white/10 bg-black/40 text-left">
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom whitespace-nowrap">
+                      Asset
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom whitespace-nowrap">
+                      Status
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom whitespace-nowrap">
+                      Call
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom whitespace-nowrap">
+                      Target
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom whitespace-nowrap">
+                      Window
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom whitespace-nowrap">
+                      Date
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom min-w-[120px]">
+                      Outcome
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom text-right whitespace-nowrap">
+                      <span className="sr-only">Delete</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {predictions.map((p) => {
+                    const st = STATUS_COLORS[p.status];
+                    return (
+                      <Fragment key={p.id}>
+                        <tr className="border-b border-white/5 hover:bg-white/[0.04] transition-colors">
+                          <td className="px-3 py-3 align-middle font-semibold text-white whitespace-nowrap">{p.asset}</td>
+                          <td className="px-3 py-3 align-middle whitespace-nowrap">
+                            <span className={`text-xs px-2 py-1 rounded-full border ${st.bg} ${st.text}`}>{st.label}</span>
+                          </td>
+                          <td className={`px-3 py-3 align-middle font-semibold whitespace-nowrap ${p.call === "Long" ? "text-green-400" : "text-red-400"}`}>
+                            {p.call}
+                          </td>
+                          <td className="px-3 py-3 align-middle text-gray-200 tabular-nums">{p.target}</td>
+                          <td className="px-3 py-3 align-middle text-gray-300">{p.timeframe}</td>
+                          <td className="px-3 py-3 align-middle text-gray-500 whitespace-nowrap">{p.date}</td>
+                          <td className="px-3 py-3 align-middle text-gray-300 text-xs max-w-[200px]">{p.outcome}</td>
+                          <td className="px-3 py-3 align-middle text-right">
+                            <button
+                              type="button"
+                              onClick={() => deletePrediction(p.id)}
+                              className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-500/10"
+                              title="Delete"
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                        {p.notes ? (
+                          <tr className="border-b border-white/5 bg-black/20">
+                            <td colSpan={8} className="px-3 py-2 text-xs text-gray-500">
+                              {p.notes}
+                            </td>
+                          </tr>
+                        ) : null}
+                        {p.status === "open" ? (
+                          <tr className="border-b border-white/10">
+                            <td colSpan={8} className="px-3 py-3">
+                              <div className="flex flex-wrap gap-2">
+                                <button type="button" onClick={() => updateStatus(p.id, "hit", "Target reached")} className="text-xs bg-green-600/20 text-green-400 border border-green-500/30 px-3 py-1.5 rounded-md hover:bg-green-600/30">Mark Hit</button>
+                                <button type="button" onClick={() => updateStatus(p.id, "partial", "Partial reach")} className="text-xs bg-amber-600/20 text-amber-400 border border-amber-500/30 px-3 py-1.5 rounded-md hover:bg-amber-600/30">Mark Partial</button>
+                                <button type="button" onClick={() => updateStatus(p.id, "missed", "Target not reached")} className="text-xs bg-red-600/20 text-red-400 border border-red-500/30 px-3 py-1.5 rounded-md hover:bg-red-600/30">Mark Missed</button>
+                                <button type="button" onClick={() => updateStatus(p.id, "void", "Invalidated")} className="text-xs bg-gray-600/20 text-gray-400 border border-gray-500/30 px-3 py-1.5 rounded-md hover:bg-gray-600/30">Void</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
+          ) : null}
 
           <div className="mt-8 text-center">
             <Link to="/hub" className="text-cyan-400 hover:underline">← Back to Pro Hub</Link>

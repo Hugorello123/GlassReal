@@ -3,7 +3,7 @@ import { useLiveData } from "../hooks/useLiveData";
 
 const BnbPrice = () => {
   const { data, loading } = useLiveData();
-  const { price, change, sparklineData } = data.bnb;
+  const { price, change, sparklineData } = data.btc;
   const isPositive = !change.startsWith("-");
 
   return (

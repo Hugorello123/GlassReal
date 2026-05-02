@@ -221,8 +221,8 @@ export default function ProDashboardPage() {
               </span>
             )}
             {!btcFlow && !ethFlow && !usdtFlow && (
-              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/30 border border-white/10 text-xs text-gray-500">
-                Flow data: connect BitQuery backend for live exchange flows
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/30 border border-white/10 text-xs text-gray-400 max-w-xl">
+                On-chain flows show 0 until BitQuery (or your flow provider) is configured — optional; bias and signals still work without them.
               </span>
             )}
           </div>

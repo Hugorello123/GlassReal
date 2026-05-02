@@ -170,14 +170,14 @@ export default function GuruPage() {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">🐋 Whale Alerts</h2>
                 <span className="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                  BitQuery required
+                  Optional
                 </span>
               </div>
               {whales.length === 0 ? (
                 <div className="text-sm text-gray-400 space-y-2">
-                  <p>Live whale tracking is not connected.</p>
+                  <p>On-chain whale lines will show here when exchange flows are connected (BitQuery).</p>
                   <p className="text-xs text-gray-500">
-                    To enable: add BitQuery GraphQL queries to server.mjs → <code className="text-cyan-300">/api/flow/btc</code> and <code className="text-cyan-300">/api/flow/eth</code>.
+                    For large BTC transfers now, use the <span className="text-cyan-300">Dashboard</span> whale row.
                   </p>
                 </div>
               ) : (
@@ -218,7 +218,7 @@ export default function GuruPage() {
           </div>
 
           {/* AI Insight */}
-          <div className="bg-gradient-to-r from-purple-900/30 to-amber-900/30 border border-white/10 rounded-xl p-5">
+          <div id="guru-read" className="bg-gradient-to-r from-purple-900/30 to-amber-900/30 border border-white/10 rounded-xl p-5 scroll-mt-24">
             <h2 className="text-lg font-semibold mb-3">🧠 Guru Read</h2>
             <pre className="text-sm text-gray-300 whitespace-pre-wrap font-sans leading-relaxed">
               {insight || "Awaiting data…"}
@@ -228,6 +228,17 @@ export default function GuruPage() {
           <div className="mt-6 text-center text-xs text-gray-600">
             Sentotrade • experimental tools — not investment advice.
           </div>
+
+          <button
+            type="button"
+            className="fixed bottom-28 right-5 z-[100] flex h-14 w-14 items-center justify-center rounded-full border-2 border-purple-400/70 bg-purple-600 text-2xl shadow-lg shadow-black/50 hover:bg-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-300"
+            aria-label="Jump to Guru read"
+            onClick={() =>
+              document.getElementById("guru-read")?.scrollIntoView({ behavior: "smooth", block: "start" })
+            }
+          >
+            🔮
+          </button>
         </div>
       </main>
     </>

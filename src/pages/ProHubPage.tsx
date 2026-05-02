@@ -60,8 +60,8 @@ const CARDS: HubCard[] = [
   {
     id: "indices",
     title: "Indices",
-    desc: "US Tech 100, S&P 500, Dow — quick markers & levels. (Coming: dedicated page)",
-    to: "/dashboard",
+    desc: "US Tech 100, S&P 500, Dow — quick markers & levels on the dedicated indices page.",
+    to: "/indices",
     status: "live",
     icon: "📈",
     color: "from-blue-500/20 to-indigo-500/20",
@@ -69,8 +69,8 @@ const CARDS: HubCard[] = [
   {
     id: "predictions",
     title: "Predictions",
-    desc: "Upcoming calls & outcome tracking. What we said vs what happened. (Coming soon)",
-    to: "/pro",
+    desc: "Auto + manual calls with outcome tracking. What we said vs what happened.",
+    to: "/predictions",
     status: "live",
     icon: "🔭",
     color: "from-teal-500/20 to-cyan-500/20",

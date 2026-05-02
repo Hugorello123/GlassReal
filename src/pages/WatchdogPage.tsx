@@ -19,7 +19,15 @@ interface WatchdogTheme {
   keywords: string[];
 }
 
-/* ─── theme engine: scan headlines, score themes ─── */
+/** Drop obvious spam / affiliate headlines so themes stay market-relevant */
+const SPAM_TITLE =
+  /casino|slot\b|royal vegas|online poker|betting site|lottery jackpot|viagra|cbd gummies|crypto giveaway|double your bitcoin|free spins/i;
+
+function filterHeadlines(headlines: string[]): string[] {
+  return headlines.filter((h) => h && !SPAM_TITLE.test(h));
+}
+
+/* ─── theme engine: per-headline hits (fair when feed mixes crypto + macro) ─── */
 function buildThemes(headlines: string[]): WatchdogTheme[] {
   const themes: WatchdogTheme[] = [
     {
@@ -41,14 +49,21 @@ function buildThemes(headlines: string[]): WatchdogTheme[] {
       name: "Oil / Energy",
       heat: 0, count: 0, category: "commodity",
       impacts: [{ asset: "Oil", direction: "▲", strength: 2 }, { asset: "DXY", direction: "▲", strength: 1 }],
-      keywords: ["oil", "crude", "opec", "wti", "brent", "energy", "gasoline"],
+      keywords: ["oil", "crude", "opec", "wti", "brent", "energy", "gasoline", "petroleum"],
+    },
+    {
+      id: "tesla",
+      name: "Tesla / EV",
+      heat: 0, count: 0, category: "risk-on",
+      impacts: [{ asset: "TSLA", direction: "▲", strength: 2 }, { asset: "SPX", direction: "▲", strength: 1 }],
+      keywords: ["tesla", "tsla", "elon musk", "electric vehicle", "ev ", "cybertruck", "model y", "model 3"],
     },
     {
       id: "macro",
       name: "Fed / Rates / Macro",
       heat: 0, count: 0, category: "macro",
       impacts: [{ asset: "DXY", direction: "▲", strength: 2 }, { asset: "Gold", direction: "▼", strength: 1 }],
-      keywords: ["fed", "rate", "cpi", "inflation", "jobs", "nfp", "pmi", "gdp", "treasury", "yield"],
+      keywords: ["fed", "federal reserve", "cpi", "inflation", "jobs report", "nfp", "pmi", "gdp", "treasury", "yield", "interest rate"],
     },
     {
       id: "tariff",
@@ -59,21 +74,17 @@ function buildThemes(headlines: string[]): WatchdogTheme[] {
     },
   ];
 
-  const text = headlines.join(" ").toLowerCase();
+  const clean = filterHeadlines(headlines);
   for (const t of themes) {
-    let score = 0;
-    for (const kw of t.keywords) {
-      const re = new RegExp(kw, "gi");
-      const matches = text.match(re);
-      if (matches) {
-        score += matches.length;
-      }
+    let headlineHits = 0;
+    for (const h of clean) {
+      const lower = h.toLowerCase();
+      if (t.keywords.some((kw) => lower.includes(kw))) headlineHits++;
     }
-    t.count = score;
-    t.heat = Math.min(100, score * 15);
+    t.count = headlineHits;
+    t.heat = Math.min(100, headlineHits * 18);
   }
 
-  // Sort by heat descending
   themes.sort((a, b) => b.heat - a.heat);
   return themes;
 }
@@ -97,8 +108,8 @@ export default function WatchdogPage() {
         const res = await fetch("/api/news");
         if (!res.ok) throw new Error("News API error");
         const data = await res.json();
-        const arts = (data?.articles || []).slice(0, 20);
-        const hl = arts.map((a: any) => a.title || "").filter(Boolean);
+        const arts = (data?.articles || []).slice(0, 24);
+        const hl = filterHeadlines(arts.map((a: any) => a.title || "").filter(Boolean));
         if (!alive) return;
         setHeadlines(hl);
         setThemes(buildThemes(hl));
