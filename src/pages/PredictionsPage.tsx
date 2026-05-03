@@ -45,6 +45,7 @@ function savePredictions(list: Prediction[]) {
 /** Rows from `GET /api/predictions` (engine + resolver). */
 interface ServerSignal {
   id?: string;
+  source?: string;
   time?: string;
   asset?: string;
   call?: string;
@@ -171,6 +172,45 @@ export default function PredictionsPage() {
               </div>
             )}
           </div>
+
+          {/* ── AI Intelligence Track Record ── */}
+          <section className="mb-8">
+            <div className="flex items-center gap-3 mb-5">
+              <span className="text-2xl">🤖</span>
+              <div>
+                <h2 className="text-xl font-bold text-cyan-300 m-0">AI Intelligence Track Record</h2>
+                <p className="text-xs text-gray-500 mt-1">Sentotrade auto-generates predictions from gossip spikes — no human input</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <TrackCard
+                title="🔮 Guru Bias Signal"
+                items={serverItems}
+                bucket="guru"
+                desc="Scheduled auto-calls"
+                assets="BTC + Gold + Oil"
+              />
+              <TrackCard
+                title="📡 AI-Gossip Spike"
+                items={serverItems}
+                bucket="ai"
+                desc="Sentiment-triggered"
+                assets="Any asset from news"
+              />
+              <TrackCard
+                title="✋ Manual"
+                items={serverItems}
+                bucket="manual"
+                desc="Your own calls"
+                assets="Add on Predictions page"
+              />
+            </div>
+
+            <div className="bg-white/5 border border-white/10 rounded-lg p-4 text-sm text-gray-400">
+              <strong className="text-gray-300">How predictions work:</strong> Our system continuously scans live market data, news sentiment, and on-chain signals. When a strong pattern emerges (Guru Bias) or a gossip spike crosses the threshold (AI-Gossip), it auto-generates a prediction with entry, target, and timeframe. Manual predictions are your own calls tracked in the browser. Each prediction is resolved automatically or manually scored as Hit, Partial, or Missed.
+            </div>
+          </section>
 
           <section className="mb-10" aria-labelledby="server-signals-heading">
             <h2 id="server-signals-heading" className="text-lg font-semibold text-white mb-1">
@@ -465,5 +505,48 @@ export default function PredictionsPage() {
         </div>
       </main>
     </>
+  );
+}
+
+function classify(row: ServerSignal): "guru" | "ai" | "manual" {
+  const src = String(row.source || "").toLowerCase();
+  if (src.includes("bias") || src.includes("guru")) return "guru";
+  if (src.includes("ai") || src.includes("auto") || src.includes("gossip")) return "ai";
+  const id = String(row.id || "").toLowerCase();
+  if (id.startsWith("sig_")) return "guru";
+  if (id.startsWith("ai-") || id.startsWith("ai_gossip")) return "ai";
+  return "manual";
+}
+
+function resolvedRate(items: ServerSignal[]) {
+  let hit = 0, missed = 0, partial = 0;
+  for (const r of items) {
+    const st = String(r.status || r.outcome || "").toLowerCase();
+    const oc = String(r.outcome || "").toLowerCase();
+    if (st === "hit" || oc.includes("hit")) { hit++; continue; }
+    if (st === "missed" || oc.includes("missed") || oc.includes("not met")) { missed++; continue; }
+    if (st === "partial" || oc.includes("partial")) { partial++; continue; }
+  }
+  const resolved = hit + missed + partial;
+  const rate = resolved > 0 ? Math.round(((hit + partial * 0.5) / resolved) * 100) : 0;
+  return { hit, missed, partial, resolved, rate };
+}
+
+function TrackCard({ title, items, bucket, desc, assets }: { title: string; items: ServerSignal[]; bucket: "guru" | "ai" | "manual"; desc: string; assets: string }) {
+  const bucketed = items.filter((r) => classify(r) === bucket);
+  const { resolved, rate } = resolvedRate(bucketed);
+  const sampleAssets = Array.from(new Set(bucketed.slice(0, 8).map((r) => r.asset || "—"))).join(", ") || "—";
+  const tone = bucket === "guru" ? "border-cyan-500/20 bg-cyan-500/5" : bucket === "ai" ? "border-purple-500/20 bg-purple-500/5" : "border-white/10 bg-white/5";
+  const titleColor = bucket === "guru" ? "text-cyan-400" : bucket === "ai" ? "text-purple-400" : "text-gray-400";
+
+  return (
+    <div className={`rounded-xl border p-4 text-center ${tone}`}>
+      <div className={`text-[10px] font-bold uppercase tracking-wider ${titleColor}`}>{title}</div>
+      <div className="text-3xl font-extrabold text-white my-2">{bucketed.length}</div>
+      <div className="text-xs text-gray-400">{desc}</div>
+      <div className="text-[10px] text-gray-600 mt-1">{assets}</div>
+      <div className="text-lg font-bold text-yellow-400 mt-2">{resolved > 0 ? `${rate}%` : "—"}</div>
+      <div className="text-[10px] text-gray-500 mt-2 truncate">{sampleAssets}</div>
+    </div>
   );
 }

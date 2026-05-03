@@ -15,6 +15,7 @@ export default function NavBar({ current }: NavBarProps) {
     { id: "guru", label: "🔮 Guru", to: "/guru" },
     { id: "indices", label: "📈 Indices", to: "/indices" },
     { id: "predictions", label: "🔭 Predictions", to: "/predictions" },
+    { id: "stats", label: "📊 Stats", to: "/stats" },
   ];
 
   return (
