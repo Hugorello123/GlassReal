@@ -10,7 +10,7 @@ import Login from "./login";
 import TrialPayment from "./trial-payment";
 import RawPayment from "./raw-payment";
 import Onboarding from "./onboarding";
-import GuruPage from "./pages/GuruPage";
+import GossipFloater from "./components/GossipFloater";import GuruPage from "./pages/GuruPage";
 import WatchdogPage from "./pages/WatchdogPage";
 import ProHubPage from "./pages/ProHubPage";
 import ProDashboardPage from "./pages/ProDashboardPage";
@@ -39,6 +39,7 @@ createRoot(document.getElementById("root")!).render(
         <Route path="/stats" element={<StatsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <GossipFloater />
     </HashRouter>
   </StrictMode>,
 );
