@@ -4,3 +4,10 @@
 {"t":"2026-05-03T10:49:59.143Z","cat":"prediction","data":{"id":"sig_1777805399138_gold_long","asset":"Gold","call":"Long","status":"open"}}
 {"t":"2026-05-03T10:49:59.145Z","cat":"prediction","data":{"id":"sig_1777805399138_oil_short","asset":"Oil","call":"Short","status":"open"}}
 {"t":"2026-05-03T10:49:59.146Z","cat":"prediction","data":{"id":"sig_1777805399138_tsla_short","asset":"TSLA","call":"Short","status":"open"}}
+{"t":"2026-05-03T19:29:14.196Z","cat":"prediction","data":{"id":"sig_1777801499027_gold_long","asset":"Gold","call":"Long","status":"missed"}}
+{"t":"2026-05-03T19:29:14.198Z","cat":"prediction","data":{"id":"sig_1777805399138_oil_short","asset":"Oil","call":"Short","status":"missed"}}
+{"t":"2026-05-03T19:29:14.198Z","cat":"prediction","data":{"id":"sig_1777805399138_gold_long","asset":"Gold","call":"Long","status":"missed"}}
+{"t":"2026-05-03T19:29:14.198Z","cat":"prediction","data":{"id":"sig_1777801499027_oil_short","asset":"Oil","call":"Short","status":"missed"}}
+{"t":"2026-05-03T19:29:14.204Z","cat":"prediction","data":{"id":"sig_1777836554203_gold_long","asset":"Gold","call":"Long","status":"open"}}
+{"t":"2026-05-03T19:29:14.204Z","cat":"prediction","data":{"id":"sig_1777836554203_oil_short","asset":"Oil","call":"Short","status":"open"}}
+{"t":"2026-05-03T19:29:14.204Z","cat":"prediction","data":{"id":"sig_1777836554203_tsla_short","asset":"TSLA","call":"Short","status":"open"}}

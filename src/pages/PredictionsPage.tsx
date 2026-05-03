@@ -59,6 +59,27 @@ interface ServerSignal {
   outcome?: string;
 }
 
+/** Matches `record` on `GET /api/predictions` (full merged file counts). */
+interface ServerPredictionRecord {
+  hit: number;
+  missed: number;
+  partial: number;
+  open?: number;
+}
+
+type ServerTrackStats = {
+  hit: number;
+  missed: number;
+  partial: number;
+  open: number;
+  resolved: number;
+  /** Weighted win rate: hits + half partials, same as Guru / AI cards. */
+  rate: number;
+  /** Strict hits ÷ resolved (what most people mean by “hit %”). */
+  hitRatePct: number;
+  fromApi: boolean;
+};
+
 function formatSignalTime(iso: string | undefined) {
   if (!iso) return "—";
   const t = Date.parse(iso);
@@ -86,6 +107,8 @@ export default function PredictionsPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ asset: "", call: "Long" as "Long" | "Short", target: "", timeframe: "", notes: "" });
   const [serverItems, setServerItems] = useState<ServerSignal[]>([]);
+  /** Full hit/miss/open counts from merged predictions file (same response as `items`). */
+  const [serverRecord, setServerRecord] = useState<ServerPredictionRecord | null>(null);
   const [serverLoading, setServerLoading] = useState(true);
   const [serverErr, setServerErr] = useState("");
   const [serverShowAll, setServerShowAll] = useState(false);
@@ -103,7 +126,23 @@ export default function PredictionsPage() {
         if (!ct.includes("application/json")) throw new Error("Predictions API returned non-JSON (check server / proxy)");
         const data = await res.json();
         const items = Array.isArray(data?.items) ? data.items : [];
+        const rec = data?.record;
         if (!cancelled) setServerItems(items as ServerSignal[]);
+        if (!cancelled) {
+          if (
+            rec &&
+            typeof rec.hit === "number" &&
+            typeof rec.missed === "number" &&
+            typeof rec.partial === "number"
+          ) {
+            setServerRecord({
+              hit: rec.hit,
+              missed: rec.missed,
+              partial: rec.partial,
+              open: typeof rec.open === "number" ? rec.open : undefined,
+            });
+          } else setServerRecord(null);
+        }
       } catch (e: unknown) {
         if (!cancelled) setServerErr(e instanceof Error ? e.message : "Failed to load server signals");
       } finally {
@@ -119,10 +158,7 @@ export default function PredictionsPage() {
     savePredictions(predictions);
   }, [predictions]);
 
-  const hitCount = predictions.filter((p) => p.status === "hit").length;
-  const partialCount = predictions.filter((p) => p.status === "partial").length;
-  const totalClosed = predictions.filter((p) => p.status !== "open" && p.status !== "void").length;
-  const winRate = totalClosed > 0 ? Math.round(((hitCount + partialCount * 0.5) / totalClosed) * 100) : 0;
+  const serverTrack = buildServerTrackStats(serverRecord, serverItems);
 
   const serverDisplayed =
     serverShowAll || serverItems.length <= SERVER_RECENT_COUNT
@@ -165,10 +201,16 @@ export default function PredictionsPage() {
           <div className="flex items-center justify-between mb-2">
             <h1 className="text-4xl font-bold">🔭 Predictions</h1>
             {!HIDE_LOCAL_PREDICTION_TRACKER && (
-              <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-center max-w-[140px]">
-                <div className="text-2xl font-bold text-green-400">{winRate}%</div>
-                <div className="text-xs text-gray-500">Win rate</div>
-                <div className="text-[10px] text-gray-600 leading-tight mt-1">Manual rows only — not the server list</div>
+              <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-center max-w-[155px]">
+                <div className="text-2xl font-bold text-green-400">
+                  {serverTrack.resolved > 0 ? `${serverTrack.hitRatePct}%` : "—"}
+                </div>
+                <div className="text-xs text-gray-500">Hit rate</div>
+                <div className="text-[10px] text-gray-600 leading-tight mt-1">
+                  {serverTrack.resolved > 0
+                    ? `${serverTrack.hit} / ${serverTrack.resolved} closed · server`
+                    : "Loading or no closed calls"}
+                </div>
               </div>
             )}
           </div>
@@ -198,17 +240,11 @@ export default function PredictionsPage() {
                 desc="Sentiment-triggered"
                 assets="Any asset from news"
               />
-              <TrackCard
-                title="✋ Manual"
-                items={serverItems}
-                bucket="manual"
-                desc="Your own calls"
-                assets="Add on Predictions page"
-              />
+              <ServerCombinedTrackCard stats={serverTrack} loading={serverLoading} />
             </div>
 
             <div className="bg-white/5 border border-white/10 rounded-lg p-4 text-sm text-gray-400">
-              <strong className="text-gray-300">How predictions work:</strong> Our system continuously scans live market data, news sentiment, and on-chain signals. When a strong pattern emerges (Guru Bias) or a gossip spike crosses the threshold (AI-Gossip), it auto-generates a prediction with entry, target, and timeframe. Manual predictions are your own calls tracked in the browser. Each prediction is resolved automatically or manually scored as Hit, Partial, or Missed.
+              <strong className="text-gray-300">How predictions work:</strong> Our system continuously scans live market data, news sentiment, and on-chain signals. When a strong pattern emerges (Guru Bias) or a gossip spike crosses the threshold (AI-Gossip), it auto-generates a prediction with entry, target, and timeframe. You can also add your own calls below; those stay in this browser only. Each prediction is resolved automatically or manually scored as Hit, Partial, or Missed.
             </div>
           </section>
 
@@ -519,17 +555,94 @@ function classify(row: ServerSignal): "guru" | "ai" | "manual" {
 }
 
 function resolvedRate(items: ServerSignal[]) {
-  let hit = 0, missed = 0, partial = 0;
+  let hit = 0,
+    missed = 0,
+    partial = 0;
   for (const r of items) {
-    const st = String(r.status || r.outcome || "").toLowerCase();
+    const statusRaw = String(r.status ?? "").trim().toLowerCase();
+    if (statusRaw === "hit") {
+      hit++;
+      continue;
+    }
+    if (statusRaw === "missed") {
+      missed++;
+      continue;
+    }
+    if (statusRaw === "partial") {
+      partial++;
+      continue;
+    }
+    if (statusRaw === "open" || statusRaw === "void" || statusRaw === "") continue;
     const oc = String(r.outcome || "").toLowerCase();
-    if (st === "hit" || oc.includes("hit")) { hit++; continue; }
-    if (st === "missed" || oc.includes("missed") || oc.includes("not met")) { missed++; continue; }
-    if (st === "partial" || oc.includes("partial")) { partial++; continue; }
+    if (oc.includes("target reached") || oc.includes("reached @")) hit++;
+    else if (oc.includes("partial move")) partial++;
+    else if (oc.includes("not met") || oc.includes("no price data")) missed++;
   }
   const resolved = hit + missed + partial;
   const rate = resolved > 0 ? Math.round(((hit + partial * 0.5) / resolved) * 100) : 0;
   return { hit, missed, partial, resolved, rate };
+}
+
+function buildServerTrackStats(
+  fullRecord: ServerPredictionRecord | null,
+  serverItems: ServerSignal[]
+): ServerTrackStats {
+  const rec = fullRecord;
+  if (
+    rec &&
+    typeof rec.hit === "number" &&
+    typeof rec.missed === "number" &&
+    typeof rec.partial === "number"
+  ) {
+    const hit = rec.hit;
+    const missed = rec.missed;
+    const partial = rec.partial;
+    const open = rec.open ?? 0;
+    const resolved = hit + missed + partial;
+    const rate = resolved > 0 ? Math.round(((hit + partial * 0.5) / resolved) * 100) : 0;
+    const hitRatePct = resolved > 0 ? Math.round((hit / resolved) * 100) : 0;
+    return { hit, missed, partial, open, resolved, rate, hitRatePct, fromApi: true };
+  }
+  const r = resolvedRate(serverItems);
+  const open = serverItems.filter((s) => String(s.status ?? "").trim().toLowerCase() === "open").length;
+  const hitRatePct = r.resolved > 0 ? Math.round((r.hit / r.resolved) * 100) : 0;
+  return {
+    hit: r.hit,
+    missed: r.missed,
+    partial: r.partial,
+    open,
+    resolved: r.resolved,
+    rate: r.rate,
+    hitRatePct,
+    fromApi: false,
+  };
+}
+
+function ServerCombinedTrackCard({ stats, loading }: { stats: ServerTrackStats; loading: boolean }) {
+  const { resolved, rate, hitRatePct, hit, missed, partial, open, fromApi } = stats;
+  return (
+    <div className="rounded-xl border p-4 text-center border-green-500/25 bg-green-500/5">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-green-400">📊 All server signals</div>
+      <div className="text-3xl font-extrabold text-green-300 my-2">
+        {loading ? "…" : resolved > 0 ? `${hitRatePct}%` : "—"}
+      </div>
+      <div className="text-xs text-gray-400">Hit rate (resolved)</div>
+      <div className="text-[10px] text-gray-600 mt-1">
+        Win score {resolved > 0 ? `${rate}%` : "—"} — partials count half
+      </div>
+      <div className="text-[10px] text-gray-500 mt-2 leading-snug">
+        {loading
+          ? "Loading…"
+          : `${hit} hit · ${partial} partial · ${missed} missed${open ? ` · ${open} open` : ""}`}
+      </div>
+      {!loading && resolved === 0 ? (
+        <div className="text-[10px] text-amber-500/80 mt-1">No closed server rows yet</div>
+      ) : null}
+      <div className="text-[10px] text-gray-600 mt-1">
+        {fromApi ? "All rows in predictions file" : "Partial list only — deploy latest server + frontend"}
+      </div>
+    </div>
+  );
 }
 
 function TrackCard({ title, items, bucket, desc, assets }: { title: string; items: ServerSignal[]; bucket: "guru" | "ai" | "manual"; desc: string; assets: string }) {

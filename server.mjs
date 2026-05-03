@@ -314,6 +314,20 @@ function readAllPredictionsMerged() {
   return clean(parsed);
 }
 
+/** Hit/miss/partial/open from merged predictions file — same source of truth as GET /api/predictions. */
+function predictionRecordFromMerged() {
+  const merged = readAllPredictionsMerged();
+  let hit = 0, missed = 0, partial = 0, open = 0;
+  for (const p of merged) {
+    const st = String(p.status ?? "open").toLowerCase();
+    if (st === "hit") hit++;
+    else if (st === "missed") missed++;
+    else if (st === "partial") partial++;
+    else open++;
+  }
+  return { hit, missed, partial, open };
+}
+
 /** Atomic replace: only touches PREDICTIONS_FILE in this app directory (safe alongside other apps). */
 function writePredictionsAtomic(records) {
   const tmp = PREDICTIONS_FILE + ".tmp." + process.pid;
@@ -528,7 +542,7 @@ function handleRequest(req, res) {
   if (pathOnly === "/api/predictions" || pathOnly.startsWith("/api/signal/recent")) {
     const q = new URL(raw, "http://127.0.0.1").searchParams;
     const lim = Math.min(200, Math.max(1, parseInt(q.get("limit") || "50", 10)));
-    return res.writeHead(200, {"Content-Type": "application/json"}).end(JSON.stringify({ items: loadPredictions(lim) }));
+    return res.writeHead(200, {"Content-Type": "application/json"}).end(JSON.stringify({ items: loadPredictions(lim), record: predictionRecordFromMerged() }));
   }
 
   if (pathOnly === "/api/news") {
@@ -562,7 +576,7 @@ function handleRequest(req, res) {
   if (pathOnly === "/api/stats/summary") {
     let all = [], bias = [], predictions = [], news = [];
     if (fs.existsSync(STATS_FILE)) { const lines = fs.readFileSync(STATS_FILE, "utf8").trim().split("\n").filter(Boolean); const parsed = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); all = parsed; bias = parsed.filter(s => s.cat === "bias"); predictions = parsed.filter(s => s.cat === "prediction"); news = parsed.filter(s => s.cat === "news"); }
-    return res.writeHead(200, {"Content-Type": "application/json"}).end(JSON.stringify({ total: all.length, categories: { bias: bias.length, prediction: predictions.length, news: news.length }, latestBias: bias[bias.length - 1]?.data || null, predictionRecord: { hit: predictions.filter(p => p.data?.status === "hit").length, missed: predictions.filter(p => p.data?.status === "missed").length, partial: predictions.filter(p => p.data?.status === "partial").length, open: predictions.filter(p => p.data?.status === "open").length }, lastNewsCount: news[news.length - 1]?.data?.count || 0 }));
+    return res.writeHead(200, {"Content-Type": "application/json"}).end(JSON.stringify({ total: all.length, categories: { bias: bias.length, prediction: predictions.length, news: news.length }, latestBias: bias[bias.length - 1]?.data || null, predictionRecord: predictionRecordFromMerged(), lastNewsCount: news[news.length - 1]?.data?.count || 0 }));
   }
 
   if (pathOnly === "/api/stats") {
