@@ -1,0 +1,3 @@
+{"t":"2026-05-03T09:44:59.028Z","cat":"prediction","data":{"id":"sig_1777801499027_gold_long","asset":"Gold","call":"Long","status":"open"}}
+{"t":"2026-05-03T09:44:59.030Z","cat":"prediction","data":{"id":"sig_1777801499027_oil_short","asset":"Oil","call":"Short","status":"open"}}
+{"t":"2026-05-03T09:44:59.030Z","cat":"prediction","data":{"id":"sig_1777801499027_tsla_short","asset":"TSLA","call":"Short","status":"open"}}

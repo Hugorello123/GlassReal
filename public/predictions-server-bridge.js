@@ -1,85 +1,75 @@
-/**
- * Optional mount: add <div id="predictions-server-mount"></div> on a page that loads this script.
- * Fetches /api/predictions and renders a compact table (tight margins vs legacy 20px/16px box).
- */
 (function () {
-  const mount = document.getElementById("predictions-server-mount");
-  if (!mount) return;
+  'use strict';
 
-  async function load() {
-    try {
-      const r = await fetch("/api/predictions");
-      const j = await r.json();
-      const items = Array.isArray(j?.items) ? j.items : [];
-
-      mount.textContent = "";
-      const box = document.createElement("div");
-      box.style.cssText =
-        "margin:12px 0;padding:12px;border:1px solid #334155;border-radius:12px;background:#0b1220;color:#e2e7eb;position:relative;z-index:1;";
-
-      const title = document.createElement("div");
-      title.textContent = "Server signals (recent)";
-      title.style.cssText = "font-size:12px;font-weight:600;margin-bottom:8px;color:#94a3b8;";
-      box.appendChild(title);
-
-      if (!items.length) {
-        const empty = document.createElement("p");
-        empty.textContent = "No server predictions yet.";
-        empty.style.cssText = "margin:0;font-size:13px;color:#64748b;";
-        box.appendChild(empty);
-        mount.appendChild(box);
-        return;
-      }
-
-      const table = document.createElement("table");
-      table.style.cssText = "width:100%;border-collapse:collapse;font-size:13px;";
-      const thead = document.createElement("thead");
-      thead.innerHTML =
-        "<tr style=\"text-align:left;border-bottom:1px solid #334155;color:#94a3b8;font-size:11px;text-transform:uppercase;\">" +
-        "<th style=\"padding:6px 8px 8px 0;\">Asset</th>" +
-        "<th style=\"padding:6px 8px 8px 0;\">Call</th>" +
-        "<th style=\"padding:6px 8px 8px 0;\">Status</th>" +
-        "<th style=\"padding:6px 8px 8px 0;\">Horizon</th>" +
-        "</tr>";
-      table.appendChild(thead);
-      const tbody = document.createElement("tbody");
-      for (const row of items.slice(0, 20)) {
-        const tr = document.createElement("tr");
-        tr.style.cssText = "border-bottom:1px solid #1e293b;";
-        const asset = row.asset ?? "—";
-        const call = row.call ?? "—";
-        const status = row.status ?? "—";
-        const horizon = row.horizon ?? row.timeframe ?? "—";
-        tr.innerHTML =
-          "<td style=\"padding:8px 8px 8px 0;\">" +
-          escapeHtml(String(asset)) +
-          "</td>" +
-          "<td style=\"padding:8px 8px 8px 0;\">" +
-          escapeHtml(String(call)) +
-          "</td>" +
-          "<td style=\"padding:8px 8px 8px 0;\">" +
-          escapeHtml(String(status)) +
-          "</td>" +
-          "<td style=\"padding:8px 8px 8px 0;color:#94a3b8;\">" +
-          escapeHtml(String(horizon)) +
-          "</td>";
-        tbody.appendChild(tr);
-      }
-      table.appendChild(tbody);
-      box.appendChild(table);
-      mount.appendChild(box);
-    } catch (e) {
-      console.warn("[predictions-server-bridge]", e);
-    }
+  function money(v) {
+    var n = Number(v);
+    if (!Number.isFinite(n)) return '—';
+    return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
   }
 
-  function escapeHtml(s) {
-    return s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+  function statusPill(s) {
+    var st = String(s || 'open').toLowerCase();
+    var c = st === 'hit' ? '#22c55e' : st === 'missed' ? '#ef4444' : st === 'partial' ? '#f59e0b' : '#60a5fa';
+    return '<span style="padding:2px 8px;border-radius:999px;border:1px solid '+c+'66;color:'+c+';font-weight:700;font-size:12px;">'+st.toUpperCase()+'</span>';
   }
 
-  load();
+  function sourceOf(p) { return p.source || (p.id && p.id.startsWith('ai-gossip') ? 'AI-Gossip' : 'Bias Signal'); }
+
+  function row(p) {
+    var asset = (p.asset || '—').toUpperCase();
+    var call = p.call || '—';
+    var entry = money(p.entry);
+    var target = money(p.target);
+    var status = statusPill(p.status);
+    var src = sourceOf(p);
+    return '<tr>' +
+      '<td style="padding:10px;border-bottom:1px solid #1f2937;font-weight:700;">'+asset+'</td>' +
+      '<td style="padding:10px;border-bottom:1px solid #1f2937;">'+call+'</td>' +
+      '<td style="padding:10px;border-bottom:1px solid #1f2937;">'+entry+'</td>' +
+      '<td style="padding:10px;border-bottom:1px solid #1f2937;">'+target+'</td>' +
+      '<td style="padding:10px;border-bottom:1px solid #1f2937;">'+status+'</td>' +
+      '<td style="padding:10px;border-bottom:1px solid #1f2937;color:#93c5fd;">'+src+'</td>' +
+    '</tr>';
+  }
+
+  function mount(preds) {
+    var container = document.querySelector('main') || document.body;
+    var old = document.getElementById('predictions-server-bridge');
+    if (old) old.remove();
+
+    var box = document.createElement('div');
+    box.id = 'predictions-server-bridge';
+    box.style.cssText = 'margin:20px 0;padding:16px;border:1px solid #334155;border-radius:12px;background:#0b1220;color:#e5e7eb;';
+    box.innerHTML =
+      '<h2 style="margin:0 0 10px 0;font-size:20px;color:#22d3ee;">Server Predictions ('+preds.length+')</h2>' +
+      '<div style="overflow:auto;max-height:520px;">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+          '<thead><tr style="text-align:left;color:#94a3b8;">' +
+            '<th style="padding:10px;border-bottom:1px solid #334155;">Asset</th>' +
+            '<th style="padding:10px;border-bottom:1px solid #334155;">Call</th>' +
+            '<th style="padding:10px;border-bottom:1px solid #334155;">Entry</th>' +
+            '<th style="padding:10px;border-bottom:1px solid #334155;">Target</th>' +
+            '<th style="padding:10px;border-bottom:1px solid #334155;">Status</th>' +
+            '<th style="padding:10px;border-bottom:1px solid #334155;">Source</th>' +
+          '</tr></thead>' +
+          '<tbody>' + preds.map(row).join('') + '</tbody>' +
+        '</table>' +
+      '</div>';
+
+    container.insertBefore(box, container.firstChild);
+  }
+
+  function run() {
+    if (!location.hash.includes('/predictions')) return;
+    fetch('/api/predictions', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var items = Array.isArray(d && d.items) ? d.items : [];
+        mount(items);
+      })
+      .catch(function (e) { console.log('[predictions-bridge] error', e); });
+  }
+
+  setTimeout(run, 700);
+  window.addEventListener('hashchange', function(){ setTimeout(run, 300); });
 })();

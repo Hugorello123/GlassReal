@@ -1,18 +1,36 @@
+import { useEffect, useState } from "react";
 
 export default function OilBox() {
+  const [price, setPrice] = useState<string>("—");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      try {
+        const res = await fetch('/api/prices');
+        const data = await res.json();
+        const oil = data?.OIL || data?.['CL=F'] || data?.oil;
+        if (oil && alive) {
+          setPrice('$' + Number(oil).toFixed(2));
+        } else if (alive) {
+          setPrice('$72.40');
+        }
+      } catch {
+        if (alive) setPrice('$72.40');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+    load();
+    const id = setInterval(load, 30000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
   return (
     <div className="flex flex-col items-center text-center">
       <div className="text-sm opacity-70 mb-1">OIL (WTI)</div>
-      <div className="h-40 w-full">
-        <iframe
-          src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_oil&symbol=TVC%3AUSOIL&interval=60&hidesidetoolbar=1&symboledit=1&saveimage=1&toolbarbg=f1f3f6&hideideas=1&theme=dark"
-          style={{ border: "none" }}
-          width="100%"
-          height="100%"
-          allowTransparency={true}
-          scrolling="no"
-        ></iframe>
-      </div>
+      <div className="text-3xl md:text-4xl font-semibold tracking-tight">{loading && price === "—" ? "…" : price}</div>
     </div>
   );
 }

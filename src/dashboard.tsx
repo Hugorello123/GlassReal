@@ -15,12 +15,13 @@ import GoldBox from "@/components/GoldBox";
 import BitcoinBox from "@/components/BitcoinBox";
 import OilBox from "@/components/OilBox";
 import ForexBox from "@/components/ForexBox";
+import TeslaBox from "@/components/TeslaBox";
 import IntelligenceFeed from "@/lib/IntelligenceFeed";
 import GuruDrawer from "@/components/GuruDrawer";
 import NavBar from "@/components/NavBar";
-import StatsSummarySplitCard from "@/components/StatsSummarySplitCard";
 
 export default function Dashboard() {
+  if (typeof window !== "undefined") window.scrollTo(0,0);
   const [guruTopic, setGuruTopic] = useState<string | undefined>(undefined);
 
   return (
@@ -38,7 +39,7 @@ export default function Dashboard() {
         </section>
 
         {/* Four widgets */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+        <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-10">
           {/* 1: Gold */}
           <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">
             <GoldBox />
@@ -50,6 +51,10 @@ export default function Dashboard() {
           {/* 3: Oil */}
           <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">
             <OilBox />
+          </div>
+          {/* 5: Tesla */}
+          <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">
+            <TeslaBox />
           </div>
           {/* 4: Forex alternating */}
           <div className="bg-white/10 p-6 rounded-xl text-center min-h-[120px]">
@@ -65,7 +70,6 @@ export default function Dashboard() {
           </div>
         </section>
 
-        <StatsSummarySplitCard />
 
         <EquitiesCommoditiesPanel />
 
