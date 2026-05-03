@@ -72,6 +72,51 @@ async function fetchNewsWithCache() {
   return articles;
 }
 
+const GOSSIP_KEYWORDS = ["gold", "oil", "btc", "bitcoin", "tesla", "fed", "tariff", "inflation", "rate", "spy"];
+
+function gossipIsPlaceholderArticle(a) {
+  const t = String(a?.title || "").toLowerCase();
+  return !t || t === "loading..." || t.includes("news temporarily unavailable");
+}
+
+function gossipTitleMatchesKeyword(title) {
+  const lower = String(title || "").toLowerCase();
+  return GOSSIP_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+function gossipPayloadFromArticles(articles) {
+  const valid = (articles || []).filter((a) => !gossipIsPlaceholderArticle(a));
+  const matchingCount = valid.filter((a) => gossipTitleMatchesKeyword(a.title)).length;
+  const intensity = Math.min(10, matchingCount);
+
+  const keywordCounts = Object.create(null);
+  for (const kw of GOSSIP_KEYWORDS) keywordCounts[kw] = 0;
+  for (const a of valid) {
+    const lower = String(a.title || "").toLowerCase();
+    for (const kw of GOSSIP_KEYWORDS) {
+      if (lower.includes(kw)) keywordCounts[kw]++;
+    }
+  }
+  const spywords = Object.entries(keywordCounts)
+    .filter(([, c]) => c > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 5)
+    .map(([kw]) => kw);
+
+  const alerts = [];
+  for (const a of valid) {
+    if (alerts.length >= 3) break;
+    if (gossipTitleMatchesKeyword(a.title)) alerts.push(String(a.title || ""));
+  }
+
+  const headlines = valid.slice(0, 5).map((a) => ({
+    title: String(a.title || ""),
+    url: String(a.url || "#"),
+  }));
+
+  return { intensity, spywords, alerts, headlines };
+}
+
 /** Same-origin indices feed for SPA (avoids browser CORS on Yahoo).
  *  Yahoo returns 404 for comma-separated multi-symbol chart URLs — fetch each ticker. */
 async function fetchIndicesFromYahoo() {
@@ -488,6 +533,18 @@ function handleRequest(req, res) {
 
   if (pathOnly === "/api/news") {
     fetchNewsWithCache().then(articles => res.writeHead(200, {"Content-Type": "application/json"}).end(JSON.stringify({ articles })));
+    return;
+  }
+
+  if (pathOnly === "/api/gossip") {
+    fetchNewsWithCache()
+      .then((articles) => {
+        const body = gossipPayloadFromArticles(articles);
+        return res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(body));
+      })
+      .catch(() =>
+        res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ intensity: 0, spywords: [], alerts: [], headlines: [] }))
+      );
     return;
   }
 
