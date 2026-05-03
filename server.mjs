@@ -49,8 +49,8 @@ async function fetchNewsWithCache() {
   }
   let articles = [];
   try {
-    const q1 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=crypto&language=en&size=10`;
-    const q2 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=oil%20OR%20fed%20OR%20inflation%20OR%20tesla%20OR%20stocks&language=en&size=10`;
+    const q1 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=war%20OR%20ceasefire%20OR%20sanctions%20OR%20conflict%20OR%20peace%20OR%20geopolitical&language=en&size=10`;
+    const q2 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=oil%20OR%20fed%20OR%20inflation%20OR%20rates%20OR%20tariff%20OR%20macro&language=en&size=10`;
     const [r1, r2] = await Promise.all([
       fetch(q1, { signal: AbortSignal.timeout(5000) }),
       fetch(q2, { signal: AbortSignal.timeout(5000) }),
