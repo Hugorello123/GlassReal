@@ -205,8 +205,8 @@ export default function PredictionsPage() {
                 <div className="text-2xl font-bold text-green-400">
                   {serverTrack.resolved > 0 ? `${serverTrack.hitRatePct}%` : "—"}
                 </div>
-                <div className="text-xs text-gray-500">Hit rate</div>
-                <div className="text-[10px] text-gray-600 leading-tight mt-1">
+                <div className="text-xs font-medium text-gray-300">Hit rate</div>
+                <div className="text-xs text-gray-400 leading-snug mt-1">
                   {serverTrack.resolved > 0
                     ? `${serverTrack.hit} / ${serverTrack.resolved} closed · server`
                     : "Loading or no closed calls"}
@@ -221,7 +221,9 @@ export default function PredictionsPage() {
               <span className="text-2xl">🤖</span>
               <div>
                 <h2 className="text-xl font-bold text-cyan-300 m-0">AI Intelligence Track Record</h2>
-                <p className="text-xs text-gray-500 mt-1">Sentotrade auto-generates predictions from gossip spikes — no human input</p>
+                <p className="text-sm text-gray-300 mt-1 leading-relaxed max-w-xl">
+                  Sentotrade auto-generates predictions from gossip spikes — no human input
+                </p>
               </div>
             </div>
 
@@ -243,8 +245,8 @@ export default function PredictionsPage() {
               <ServerCombinedTrackCard stats={serverTrack} loading={serverLoading} />
             </div>
 
-            <div className="bg-white/5 border border-white/10 rounded-lg p-4 text-sm text-gray-400">
-              <strong className="text-gray-300">How predictions work:</strong> Our system continuously scans live market data, news sentiment, and on-chain signals. When a strong pattern emerges (Guru Bias) or a gossip spike crosses the threshold (AI-Gossip), it auto-generates a prediction with entry, target, and timeframe. You can also add your own calls below; those stay in this browser only. Each prediction is resolved automatically or manually scored as Hit, Partial, or Missed.
+            <div className="bg-white/5 border border-white/10 rounded-lg p-4 text-sm text-gray-300 leading-relaxed">
+              <strong className="text-gray-100">How predictions work:</strong> Our system continuously scans live market data, news sentiment, and on-chain signals. When a strong pattern emerges (Guru Bias) or a gossip spike crosses the threshold (AI-Gossip), it auto-generates a prediction with entry, target, and timeframe. You can also add your own calls below; those stay in this browser only. Each prediction is resolved automatically or manually scored as Hit, Partial, or Missed.
             </div>
           </section>
 
@@ -252,7 +254,7 @@ export default function PredictionsPage() {
             <h2 id="server-signals-heading" className="text-lg font-semibold text-white mb-1">
               Live signals (server)
             </h2>
-            <p className="text-xs text-gray-500 mb-3">
+            <p className="text-sm text-gray-400 mb-3 leading-relaxed">
               Auto-generated from live prices; times use your device&apos;s timezone.
             </p>
             {serverErr && (
@@ -261,9 +263,9 @@ export default function PredictionsPage() {
               </div>
             )}
             {serverLoading ? (
-              <p className="text-sm text-gray-500">Loading server signals…</p>
+              <p className="text-sm text-gray-400">Loading server signals…</p>
             ) : serverItems.length === 0 ? (
-              <p className="text-sm text-gray-500 border border-white/10 rounded-lg px-4 py-3 bg-white/[0.03]">
+              <p className="text-sm text-gray-300 border border-white/10 rounded-lg px-4 py-3 bg-white/[0.03]">
                 No server signals to show yet (engine may be between runs, or filters are quiet).
               </p>
             ) : (
@@ -272,28 +274,28 @@ export default function PredictionsPage() {
                 <table className="w-full min-w-[720px] text-sm border-collapse">
                   <thead>
                     <tr className="border-b border-white/10 bg-black/40 text-left">
-                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 whitespace-nowrap">
                         Time
                       </th>
-                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 whitespace-nowrap">
                         Asset
                       </th>
-                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 whitespace-nowrap">
                         Call
                       </th>
-                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 whitespace-nowrap">
                         Entry
                       </th>
-                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 whitespace-nowrap">
                         Target
                       </th>
-                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 whitespace-nowrap">
                         Window
                       </th>
-                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap">
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 whitespace-nowrap">
                         Status
                       </th>
-                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 min-w-[140px]">
+                      <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 min-w-[140px]">
                         Outcome
                       </th>
                     </tr>
@@ -306,7 +308,7 @@ export default function PredictionsPage() {
                       return (
                         <Fragment key={row.id ? `${row.id}-${ri}` : `srv-${ri}-${row.time}-${row.asset}`}>
                           <tr className="border-b border-white/5 hover:bg-white/[0.04]">
-                            <td className="px-3 py-3 text-gray-400 whitespace-nowrap text-xs">
+                            <td className="px-3 py-3 text-gray-300 whitespace-nowrap text-xs">
                               {formatSignalTime(row.time)}
                             </td>
                             <td className="px-3 py-3 font-semibold text-white whitespace-nowrap">{row.asset || "—"}</td>
@@ -321,7 +323,7 @@ export default function PredictionsPage() {
                             <td className="px-3 py-3 text-gray-200 tabular-nums">
                               {formatServerNum(row.target)}
                               {row.targetPct ? (
-                                <span className="text-gray-500 text-xs ml-1">({row.targetPct})</span>
+                                <span className="text-gray-400 text-xs ml-1">({row.targetPct})</span>
                               ) : null}
                             </td>
                             <td className="px-3 py-3 text-gray-300 text-xs">{win}</td>
@@ -332,7 +334,7 @@ export default function PredictionsPage() {
                           </tr>
                           {row.why ? (
                             <tr className="border-b border-white/5 bg-black/25">
-                              <td colSpan={8} className="px-3 py-2 text-xs text-gray-500">
+                              <td colSpan={8} className="px-3 py-2 text-xs text-gray-400">
                                 {row.why}
                               </td>
                             </tr>
@@ -359,11 +361,11 @@ export default function PredictionsPage() {
           </section>
 
           {HIDE_LOCAL_PREDICTION_TRACKER ? (
-            <p className="text-sm text-gray-500 mb-8 border border-white/10 rounded-lg px-4 py-3 bg-white/[0.03]">
+            <p className="text-sm text-gray-300 mb-8 border border-white/10 rounded-lg px-4 py-3 bg-white/[0.03]">
               Personal call tracker (browser-only) is hidden in this build. Your manual list is not shown below.
             </p>
           ) : (
-            <p className="text-gray-400 mb-8">
+            <p className="text-gray-300 mb-8 leading-relaxed">
               Track your market calls below. Add a prediction, then score the outcome when it resolves.
             </p>
           )}
@@ -444,8 +446,8 @@ export default function PredictionsPage() {
           {/* List */}
           {!HIDE_LOCAL_PREDICTION_TRACKER && predictions.length === 0 ? (
             <div className="bg-white/5 border border-white/10 rounded-xl p-8 text-center">
-              <p className="text-gray-400">No predictions tracked yet.</p>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-gray-300">No predictions tracked yet.</p>
+              <p className="text-sm text-gray-400 mt-2 leading-relaxed">
                 Click "Add Prediction" to start tracking your calls. All data stays in your browser.
               </p>
             </div>
@@ -454,28 +456,28 @@ export default function PredictionsPage() {
               <table className="w-full min-w-[640px] text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-white/10 bg-black/40 text-left">
-                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom whitespace-nowrap">
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 align-bottom whitespace-nowrap">
                       Asset
                     </th>
-                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom whitespace-nowrap">
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 align-bottom whitespace-nowrap">
                       Status
                     </th>
-                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom whitespace-nowrap">
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 align-bottom whitespace-nowrap">
                       Call
                     </th>
-                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom whitespace-nowrap">
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 align-bottom whitespace-nowrap">
                       Target
                     </th>
-                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom whitespace-nowrap">
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 align-bottom whitespace-nowrap">
                       Window
                     </th>
-                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom whitespace-nowrap">
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 align-bottom whitespace-nowrap">
                       Date
                     </th>
-                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom min-w-[120px]">
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 align-bottom min-w-[120px]">
                       Outcome
                     </th>
-                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 align-bottom text-right whitespace-nowrap">
+                    <th scope="col" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-300 align-bottom text-right whitespace-nowrap">
                       <span className="sr-only">Delete</span>
                     </th>
                   </tr>
@@ -495,7 +497,7 @@ export default function PredictionsPage() {
                           </td>
                           <td className="px-3 py-3 align-middle text-gray-200 tabular-nums">{p.target}</td>
                           <td className="px-3 py-3 align-middle text-gray-300">{p.timeframe}</td>
-                          <td className="px-3 py-3 align-middle text-gray-500 whitespace-nowrap">{p.date}</td>
+                          <td className="px-3 py-3 align-middle text-gray-400 whitespace-nowrap">{p.date}</td>
                           <td className="px-3 py-3 align-middle text-gray-300 text-xs max-w-[200px]">{p.outcome}</td>
                           <td className="px-3 py-3 align-middle text-right">
                             <button
@@ -510,7 +512,7 @@ export default function PredictionsPage() {
                         </tr>
                         {p.notes ? (
                           <tr className="border-b border-white/5 bg-black/20">
-                            <td colSpan={8} className="px-3 py-2 text-xs text-gray-500">
+                            <td colSpan={8} className="px-3 py-2 text-xs text-gray-400">
                               {p.notes}
                             </td>
                           </tr>
@@ -622,23 +624,23 @@ function ServerCombinedTrackCard({ stats, loading }: { stats: ServerTrackStats; 
   const { resolved, rate, hitRatePct, hit, missed, partial, open, fromApi } = stats;
   return (
     <div className="rounded-xl border p-4 text-center border-green-500/25 bg-green-500/5">
-      <div className="text-[10px] font-bold uppercase tracking-wider text-green-400">📊 All server signals</div>
+      <div className="text-xs font-bold uppercase tracking-wider text-green-300">📊 All server signals</div>
       <div className="text-3xl font-extrabold text-green-300 my-2">
         {loading ? "…" : resolved > 0 ? `${hitRatePct}%` : "—"}
       </div>
-      <div className="text-xs text-gray-400">Hit rate (resolved)</div>
-      <div className="text-[10px] text-gray-600 mt-1">
+      <div className="text-xs font-medium text-gray-300">Hit rate (resolved)</div>
+      <div className="text-xs text-gray-400 mt-1 leading-snug">
         Win score {resolved > 0 ? `${rate}%` : "—"} — partials count half
       </div>
-      <div className="text-[10px] text-gray-500 mt-2 leading-snug">
+      <div className="text-xs text-gray-400 mt-2 leading-snug">
         {loading
           ? "Loading…"
           : `${hit} hit · ${partial} partial · ${missed} missed${open ? ` · ${open} open` : ""}`}
       </div>
       {!loading && resolved === 0 ? (
-        <div className="text-[10px] text-amber-500/80 mt-1">No closed server rows yet</div>
+        <div className="text-xs text-amber-400 mt-1">No closed server rows yet</div>
       ) : null}
-      <div className="text-[10px] text-gray-600 mt-1">
+      <div className="text-xs text-gray-400 mt-1 leading-snug">
         {fromApi ? "All rows in predictions file" : "Partial list only — deploy latest server + frontend"}
       </div>
     </div>
@@ -650,16 +652,16 @@ function TrackCard({ title, items, bucket, desc, assets }: { title: string; item
   const { resolved, rate } = resolvedRate(bucketed);
   const sampleAssets = Array.from(new Set(bucketed.slice(0, 8).map((r) => r.asset || "—"))).join(", ") || "—";
   const tone = bucket === "guru" ? "border-cyan-500/20 bg-cyan-500/5" : bucket === "ai" ? "border-purple-500/20 bg-purple-500/5" : "border-white/10 bg-white/5";
-  const titleColor = bucket === "guru" ? "text-cyan-400" : bucket === "ai" ? "text-purple-400" : "text-gray-400";
+  const titleColor = bucket === "guru" ? "text-cyan-300" : bucket === "ai" ? "text-purple-300" : "text-gray-300";
 
   return (
     <div className={`rounded-xl border p-4 text-center ${tone}`}>
-      <div className={`text-[10px] font-bold uppercase tracking-wider ${titleColor}`}>{title}</div>
+      <div className={`text-xs font-bold uppercase tracking-wider ${titleColor}`}>{title}</div>
       <div className="text-3xl font-extrabold text-white my-2">{bucketed.length}</div>
-      <div className="text-xs text-gray-400">{desc}</div>
-      <div className="text-[10px] text-gray-600 mt-1">{assets}</div>
+      <div className="text-xs font-medium text-gray-300">{desc}</div>
+      <div className="text-xs text-gray-400 mt-1">{assets}</div>
       <div className="text-lg font-bold text-yellow-400 mt-2">{resolved > 0 ? `${rate}%` : "—"}</div>
-      <div className="text-[10px] text-gray-500 mt-2 truncate">{sampleAssets}</div>
+      <div className="text-xs text-gray-400 mt-2 truncate leading-snug">{sampleAssets}</div>
     </div>
   );
 }
