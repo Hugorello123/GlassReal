@@ -247,22 +247,31 @@ async function fetchPrices() {
   } catch { return null; }
 }
 
+/** Guru bias signals: symmetric target from entry; resolver uses PRED_STOP_LOSS_FRAC (keep RR sane). */
+const PRED_TARGET_FRAC = 0.008;
+const PRED_TARGET_PCT_LABEL = `${(PRED_TARGET_FRAC * 100).toFixed(1)}%`;
+const PRED_STOP_LOSS_FRAC = 0.006;
+
 function generateSignals(prices) {
   const signals = [];
   if (!prices) return signals;
   const now = new Date().toISOString();
   const ts = Date.now();
-  if (prices.btcCh !== null && prices.btcCh < -1.5) signals.push({ id: "sig_" + ts + "_btc_long", time: now, asset: "BTC", call: "Long", entry: prices.btc, target: (prices.btc * 1.005).toFixed(2), targetPct: "+0.5%", timeframe: "12h", why: `BTC oversold (${prices.btcCh.toFixed(2)}% 24h). Expect bounce.`, horizon: "12h", status: "open", outcome: "—" });
-  if (prices.btcCh !== null && prices.btcCh > 1.5) signals.push({ id: "sig_" + ts + "_btc_short", time: now, asset: "BTC", call: "Short", entry: prices.btc, target: (prices.btc * 0.995).toFixed(2), targetPct: "-0.5%", timeframe: "12h", why: `BTC overbought (+${prices.btcCh.toFixed(2)}% 24h). Expect pullback.`, horizon: "12h", status: "open", outcome: "—" });
-  if (prices.eth != null && prices.ethCh !== null && prices.ethCh < -1.5) signals.push({ id: "sig_" + ts + "_eth_long", time: now, asset: "ETH", call: "Long", entry: prices.eth, target: (prices.eth * 1.005).toFixed(2), targetPct: "+0.5%", timeframe: "12h", why: `ETH oversold (${prices.ethCh.toFixed(2)}% 24h). Expect bounce.`, horizon: "12h", status: "open", outcome: "—" });
-  if (prices.eth != null && prices.ethCh !== null && prices.ethCh > 1.5) signals.push({ id: "sig_" + ts + "_eth_short", time: now, asset: "ETH", call: "Short", entry: prices.eth, target: (prices.eth * 0.995).toFixed(2), targetPct: "-0.5%", timeframe: "12h", why: `ETH overbought (+${prices.ethCh.toFixed(2)}% 24h). Expect pullback.`, horizon: "12h", status: "open", outcome: "—" });
-  if (prices.goldCh !== null && prices.goldCh > 0.5) signals.push({ id: "sig_" + ts + "_gold_long", time: now, asset: "Gold", call: "Long", entry: prices.gold, target: (prices.gold * 1.003).toFixed(2), targetPct: "+0.3%", timeframe: "6h", why: `Gold breaking (+${prices.goldCh.toFixed(2)}% 24h). Safe-haven flow.`, horizon: "6h", status: "open", outcome: "—" });
-  if (prices.goldCh !== null && prices.goldCh < -0.5) signals.push({ id: "sig_" + ts + "_gold_short", time: now, asset: "Gold", call: "Short", entry: prices.gold, target: (prices.gold * 0.997).toFixed(2), targetPct: "-0.3%", timeframe: "6h", why: `Gold selling off (${prices.goldCh.toFixed(2)}% 24h). Risk-on tone.`, horizon: "6h", status: "open", outcome: "—" });
-  /* Oil / TSLA: session vs prior close from Yahoo (not CoinGecko 24h). Slightly wider band. */
-  if (prices.oil != null && prices.oilCh != null && prices.oilCh < -2) signals.push({ id: "sig_" + ts + "_oil_long", time: now, asset: "Oil", call: "Long", entry: prices.oil, target: (prices.oil * 1.004).toFixed(2), targetPct: "+0.4%", timeframe: "6h", why: `WTI weak (${prices.oilCh.toFixed(2)}% vs prior). Mean reversion watch.`, horizon: "6h", status: "open", outcome: "—" });
-  if (prices.oil != null && prices.oilCh != null && prices.oilCh > 2) signals.push({ id: "sig_" + ts + "_oil_short", time: now, asset: "Oil", call: "Short", entry: prices.oil, target: (prices.oil * 0.996).toFixed(2), targetPct: "-0.4%", timeframe: "6h", why: `WTI strong (+${prices.oilCh.toFixed(2)}% vs prior). Pullback watch.`, horizon: "6h", status: "open", outcome: "—" });
-  if (prices.tsla != null && prices.tslaCh != null && prices.tslaCh < -2.5) signals.push({ id: "sig_" + ts + "_tsla_long", time: now, asset: "TSLA", call: "Long", entry: prices.tsla, target: (prices.tsla * 1.005).toFixed(2), targetPct: "+0.5%", timeframe: "12h", why: `TSLA soft (${prices.tslaCh.toFixed(2)}% vs prior). Bounce watch.`, horizon: "12h", status: "open", outcome: "—" });
-  if (prices.tsla != null && prices.tslaCh != null && prices.tslaCh > 2.5) signals.push({ id: "sig_" + ts + "_tsla_short", time: now, asset: "TSLA", call: "Short", entry: prices.tsla, target: (prices.tsla * 0.995).toFixed(2), targetPct: "-0.5%", timeframe: "12h", why: `TSLA hot (+${prices.tslaCh.toFixed(2)}% vs prior). Fade watch.`, horizon: "12h", status: "open", outcome: "—" });
+  const up = 1 + PRED_TARGET_FRAC;
+  const down = 1 - PRED_TARGET_FRAC;
+  const pctLong = "+" + PRED_TARGET_PCT_LABEL;
+  const pctShort = "-" + PRED_TARGET_PCT_LABEL;
+  if (prices.btcCh !== null && prices.btcCh < -1.5) signals.push({ id: "sig_" + ts + "_btc_long", time: now, asset: "BTC", call: "Long", entry: prices.btc, target: (prices.btc * up).toFixed(2), targetPct: pctLong, timeframe: "12h", why: `BTC oversold (${prices.btcCh.toFixed(2)}% 24h). Expect bounce.`, horizon: "12h", status: "open", outcome: "—" });
+  if (prices.btcCh !== null && prices.btcCh > 1.5) signals.push({ id: "sig_" + ts + "_btc_short", time: now, asset: "BTC", call: "Short", entry: prices.btc, target: (prices.btc * down).toFixed(2), targetPct: pctShort, timeframe: "12h", why: `BTC overbought (+${prices.btcCh.toFixed(2)}% 24h). Expect pullback.`, horizon: "12h", status: "open", outcome: "—" });
+  if (prices.eth != null && prices.ethCh !== null && prices.ethCh < -1.5) signals.push({ id: "sig_" + ts + "_eth_long", time: now, asset: "ETH", call: "Long", entry: prices.eth, target: (prices.eth * up).toFixed(2), targetPct: pctLong, timeframe: "12h", why: `ETH oversold (${prices.ethCh.toFixed(2)}% 24h). Expect bounce.`, horizon: "12h", status: "open", outcome: "—" });
+  if (prices.eth != null && prices.ethCh !== null && prices.ethCh > 1.5) signals.push({ id: "sig_" + ts + "_eth_short", time: now, asset: "ETH", call: "Short", entry: prices.eth, target: (prices.eth * down).toFixed(2), targetPct: pctShort, timeframe: "12h", why: `ETH overbought (+${prices.ethCh.toFixed(2)}% 24h). Expect pullback.`, horizon: "12h", status: "open", outcome: "—" });
+  if (prices.goldCh !== null && prices.goldCh > 0.5) signals.push({ id: "sig_" + ts + "_gold_long", time: now, asset: "Gold", call: "Long", entry: prices.gold, target: (prices.gold * up).toFixed(2), targetPct: pctLong, timeframe: "6h", why: `Gold breaking (+${prices.goldCh.toFixed(2)}% 24h). Safe-haven flow.`, horizon: "6h", status: "open", outcome: "—" });
+  if (prices.goldCh !== null && prices.goldCh < -0.5) signals.push({ id: "sig_" + ts + "_gold_short", time: now, asset: "Gold", call: "Short", entry: prices.gold, target: (prices.gold * down).toFixed(2), targetPct: pctShort, timeframe: "6h", why: `Gold selling off (${prices.goldCh.toFixed(2)}% 24h). Risk-on tone.`, horizon: "6h", status: "open", outcome: "—" });
+  /* Oil / TSLA: session vs prior close from Yahoo (not CoinGecko 24h). Same target band as other guru signals. */
+  if (prices.oil != null && prices.oilCh != null && prices.oilCh < -2) signals.push({ id: "sig_" + ts + "_oil_long", time: now, asset: "Oil", call: "Long", entry: prices.oil, target: (prices.oil * up).toFixed(2), targetPct: pctLong, timeframe: "6h", why: `WTI weak (${prices.oilCh.toFixed(2)}% vs prior). Mean reversion watch.`, horizon: "6h", status: "open", outcome: "—" });
+  if (prices.oil != null && prices.oilCh != null && prices.oilCh > 2) signals.push({ id: "sig_" + ts + "_oil_short", time: now, asset: "Oil", call: "Short", entry: prices.oil, target: (prices.oil * down).toFixed(2), targetPct: pctShort, timeframe: "6h", why: `WTI strong (+${prices.oilCh.toFixed(2)}% vs prior). Pullback watch.`, horizon: "6h", status: "open", outcome: "—" });
+  if (prices.tsla != null && prices.tslaCh != null && prices.tslaCh < -2.5) signals.push({ id: "sig_" + ts + "_tsla_long", time: now, asset: "TSLA", call: "Long", entry: prices.tsla, target: (prices.tsla * up).toFixed(2), targetPct: pctLong, timeframe: "12h", why: `TSLA soft (${prices.tslaCh.toFixed(2)}% vs prior). Bounce watch.`, horizon: "12h", status: "open", outcome: "—" });
+  if (prices.tsla != null && prices.tslaCh != null && prices.tslaCh > 2.5) signals.push({ id: "sig_" + ts + "_tsla_short", time: now, asset: "TSLA", call: "Short", entry: prices.tsla, target: (prices.tsla * down).toFixed(2), targetPct: pctShort, timeframe: "12h", why: `TSLA hot (+${prices.tslaCh.toFixed(2)}% vs prior). Fade watch.`, horizon: "12h", status: "open", outcome: "—" });
   return signals;
 }
 
@@ -431,8 +440,8 @@ async function resolvePredictions() {
         continue;
       }
 
-      // Stop-loss: mark missed if price is ~1.5% against entry (runs before target check).
-      const stopLossPct = 0.015;
+      // Stop-loss: adverse move vs entry before target/expiry (aligned with PRED_STOP_LOSS_FRAC).
+      const stopLossPct = PRED_STOP_LOSS_FRAC;
       if (call === "long" && px <= entry * (1 - stopLossPct)) {
         p.status = "missed";
         p.outcome = `Stop-loss (${(stopLossPct * 100).toFixed(1)}% vs entry) @ ${px}`;
