@@ -4,11 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sentotrade</title>
+    <style>html,body{margin:0;padding:0;}*{scroll-margin:0;}</style>
   </head>
   <body>
     <div id="root"></div>
+    <script>history.scrollRestoration="manual";window.scrollTo(0,0);</script>
     <script type="module" src="/src/main.tsx"></script>
-    <!-- Copied from public/ into dist/ by Vite; patches dashboard prices via /api/prices -->
     <script defer src="/price-fix.js"></script>
+    <script defer src="/stats-ai-split.js"></script>
+    <script defer src="/voice-avatar.js"></script>
+    <script defer src="/guru-chat.js"></script>
+    <script defer src="/guru-gossip.js"></script>
+    <script defer src="/gossip-widget.js"></script>
+    <div style="position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.85);color:rgba(255,255,255,0.55);font-size:11px;text-align:center;padding:6px 12px;z-index:9998;font-family:sans-serif;border-top:1px solid rgba(255,255,255,0.08);">
+      Sentotrade is a market intelligence and sentiment analysis tool. It does not execute trades, hold funds, or provide regulated investment advice. All predictions, signals, and outputs are algorithmic observations for educational and research purposes only.
+    </div>
   </body>
 </html>
