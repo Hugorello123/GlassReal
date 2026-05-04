@@ -431,6 +431,23 @@ async function resolvePredictions() {
         continue;
       }
 
+      // Stop-loss: mark missed if price is ~1.5% against entry (runs before target check).
+      const stopLossPct = 0.015;
+      if (call === "long" && px <= entry * (1 - stopLossPct)) {
+        p.status = "missed";
+        p.outcome = `Stop-loss (${(stopLossPct * 100).toFixed(1)}% vs entry) @ ${px}`;
+        logStat("prediction", { id: p.id, asset: p.asset, call: p.call, status: "missed" });
+        changed = true;
+        continue;
+      }
+      if (call === "short" && px >= entry * (1 + stopLossPct)) {
+        p.status = "missed";
+        p.outcome = `Stop-loss (${(stopLossPct * 100).toFixed(1)}% vs entry) @ ${px}`;
+        logStat("prediction", { id: p.id, asset: p.asset, call: p.call, status: "missed" });
+        changed = true;
+        continue;
+      }
+
       let hit = false;
       if (call === "long") hit = px >= target;
       else hit = px <= target;
