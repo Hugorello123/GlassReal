@@ -102,6 +102,9 @@ function serverStatusBadge(st: string | undefined) {
 /** Default rows shown for server history (newest first); avoids a huge scroll. */
 const SERVER_RECENT_COUNT = 25;
 
+/** Gentle poll while tab visible — server resolver runs ~every 2m; 60s keeps UI fresh without spam. */
+const SERVER_PREDICTIONS_REFRESH_MS = 60_000;
+
 export default function PredictionsPage() {
   const [predictions, setPredictions] = useState<Prediction[]>(loadPredictions);
   const [showForm, setShowForm] = useState(false);
@@ -115,7 +118,8 @@ export default function PredictionsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    async function loadServerPredictions(isInitial: boolean) {
       try {
         const res = await fetch(apiUrl("/api/predictions?limit=100"), {
           headers: { Accept: "application/json" },
@@ -127,8 +131,9 @@ export default function PredictionsPage() {
         const data = await res.json();
         const items = Array.isArray(data?.items) ? data.items : [];
         const rec = data?.record;
-        if (!cancelled) setServerItems(items as ServerSignal[]);
         if (!cancelled) {
+          setServerErr("");
+          setServerItems(items as ServerSignal[]);
           if (
             rec &&
             typeof rec.hit === "number" &&
@@ -146,11 +151,25 @@ export default function PredictionsPage() {
       } catch (e: unknown) {
         if (!cancelled) setServerErr(e instanceof Error ? e.message : "Failed to load server signals");
       } finally {
-        if (!cancelled) setServerLoading(false);
+        if (!cancelled && isInitial) setServerLoading(false);
       }
-    })();
+    }
+
+    void loadServerPredictions(true);
+
+    const interval = setInterval(() => {
+      if (!cancelled && !document.hidden) void loadServerPredictions(false);
+    }, SERVER_PREDICTIONS_REFRESH_MS);
+
+    const onVisible = () => {
+      if (!cancelled && document.visibilityState === "visible") void loadServerPredictions(false);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
