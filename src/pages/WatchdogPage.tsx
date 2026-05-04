@@ -94,6 +94,14 @@ function impactArrows(impact: AssetImpact): string {
   return char.repeat(Math.max(1, impact.strength));
 }
 
+function categoryClass(cat: WatchdogTheme["category"]): string {
+  if (cat === "risk-on") return "text-emerald-300";
+  if (cat === "risk-off") return "text-rose-300";
+  if (cat === "commodity") return "text-amber-200";
+  if (cat === "macro") return "text-sky-300";
+  return "text-violet-300";
+}
+
 export default function WatchdogPage() {
   const [headlines, setHeadlines] = useState<string[]>([]);
   const [themes, setThemes] = useState<WatchdogTheme[]>([]);
@@ -138,61 +146,65 @@ export default function WatchdogPage() {
         <div className="max-w-5xl mx-auto px-6 py-10">
           <div className="flex items-center justify-between mb-2">
             <h1 className="text-4xl font-bold">🛡️ Watchdog</h1>
-            <span className="text-xs text-gray-500 bg-white/5 px-3 py-1 rounded-full border border-white/10">
+            <span className="text-xs text-gray-300 bg-white/5 px-3 py-1 rounded-full border border-white/10">
               Updated: {lastUpdate}
             </span>
           </div>
-          <p className="text-gray-400 mb-8">
+          <p className="text-gray-300 mb-8 leading-relaxed">
             Live news scan → theme detection → asset impact scoring.
           </p>
 
-          {loading && <div className="text-center text-gray-500 py-8">Scanning headlines…</div>}
+          {loading && <div className="text-center text-gray-400 py-8">Scanning headlines…</div>}
 
           {/* Themes radar */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
             {themes.length === 0 && !loading && (
-              <div className="col-span-2 bg-white/5 border border-white/10 rounded-xl p-5 text-sm text-gray-400">
+              <div className="col-span-2 bg-white/5 border border-white/10 rounded-xl p-5 text-sm text-gray-300 leading-relaxed">
                 No themes detected. News feed may be empty or API key not configured.
               </div>
             )}
             {themes.map((t) => (
               <div
                 key={t.id}
-                className={`bg-white/5 border rounded-xl p-5 transition ${
+                className={`rounded-xl p-5 transition border ${
                   t.heat > 60
-                    ? "border-amber-500/40"
+                    ? "bg-white/[0.07] border-amber-500/40"
                     : t.heat > 30
-                    ? "border-white/20"
-                    : "border-white/10 opacity-70"
+                    ? "bg-white/[0.06] border-white/20"
+                    : "bg-white/[0.04] border-white/10"
                 }`}
               >
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold">{t.name}</h3>
+                  <h3 className="font-semibold text-white">{t.name}</h3>
                   <div className="flex items-center gap-2">
                     <div className="w-24 h-2 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full ${
-                          t.heat > 60 ? "bg-amber-400" : t.heat > 30 ? "bg-cyan-400" : "bg-gray-500"
+                          t.heat > 60 ? "bg-amber-400" : t.heat > 30 ? "bg-cyan-400" : "bg-gray-400"
                         }`}
                         style={{ width: `${t.heat}%` }}
                       />
                     </div>
-                    <span className="text-xs text-gray-400">{t.heat}</span>
+                    <span className="text-xs font-medium text-gray-300 tabular-nums">{t.heat}</span>
                   </div>
                 </div>
-                <div className="text-xs text-gray-500 mb-2">
-                  {t.count} headline{t.count === 1 ? "" : "s"} • {t.category}
+                <div className="text-sm text-gray-300 mb-2 leading-snug">
+                  <span className="text-gray-400">{t.count} headline{t.count === 1 ? "" : "s"}</span>
+                  <span className="text-gray-400 mx-1">•</span>
+                  <span className={`font-semibold capitalize ${categoryClass(t.category)}`}>
+                    {t.category.replace(/-/g, " ")}
+                  </span>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-2">
                   {t.impacts.map((imp, i) => (
                     <div
                       key={i}
-                      className={`text-xs px-2 py-1 rounded border ${
+                      className={`text-sm px-2.5 py-1 rounded border font-medium ${
                         imp.direction === "▲"
-                          ? "border-green-500/30 text-green-400 bg-green-500/10"
+                          ? "border-green-500/40 text-green-300 bg-green-500/15"
                           : imp.direction === "▼"
-                          ? "border-red-500/30 text-red-400 bg-red-500/10"
-                          : "border-gray-500/30 text-gray-400 bg-gray-500/10"
+                          ? "border-red-500/40 text-red-300 bg-red-500/15"
+                          : "border-gray-500/40 text-gray-300 bg-gray-500/15"
                       }`}
                     >
                       {imp.asset} {impactArrows(imp)}
@@ -207,11 +219,11 @@ export default function WatchdogPage() {
           <div className="bg-gray-900/50 border border-white/10 rounded-xl p-5">
             <h2 className="text-lg font-semibold mb-3">📰 Source Headlines</h2>
             {headlines.length === 0 ? (
-              <p className="text-sm text-gray-400">No headlines loaded.</p>
+              <p className="text-sm text-gray-300">No headlines loaded.</p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[400px] overflow-y-auto pr-1">
                 {headlines.map((h, i) => (
-                  <div key={i} className="text-xs text-gray-300 bg-white/5 border border-white/5 rounded px-3 py-2">
+                  <div key={i} className="text-sm text-gray-200 bg-white/5 border border-white/10 rounded px-3 py-2 leading-snug">
                     {h}
                   </div>
                 ))}
