@@ -401,6 +401,92 @@ function priceNow(prices, asset) {
   return null;
 }
 
+/** Fast sentiment lane (AI-Gossip Spike): scalp when gossip intensity is high and headlines name an asset. */
+const FAST_GOSSIP_INT_MIN = 5;
+const FAST_GOSSIP_TARGET_FRAC = 0.004;
+const FAST_GOSSIP_STOP_FRAC = 0.003;
+const FAST_GOSSIP_COOLDOWN_MS = 20 * 60 * 1000;
+
+function detectFastGossipAsset(title) {
+  const t = String(title || "");
+  if (/\b(tsla|tesla)\b/i.test(t)) return "TSLA";
+  if (/\b(eth|ethereum)\b/i.test(t)) return "ETH";
+  if (/\b(btc|bitcoin)\b/i.test(t)) return "BTC";
+  if (/\b(xau|gold)\b/i.test(t) || /\bgold\b/i.test(t.toLowerCase())) return "Gold";
+  if (/\b(wti|brent|crude)\b/i.test(t) || /\boil\b/i.test(t.toLowerCase())) return "Oil";
+  return null;
+}
+
+function canAppendFastGossipForAsset(asset, merged, nowMs) {
+  const k = assetCooldownKey(asset);
+  for (const p of merged) {
+    const st = String(p.status || "open").toLowerCase();
+    if (st === "open" && assetCooldownKey(p.asset) === k) return false;
+  }
+  const cutoff = nowMs - FAST_GOSSIP_COOLDOWN_MS;
+  for (const p of merged) {
+    if (String(p.source || "").toLowerCase() !== "ai-gossip-fast") continue;
+    if (assetCooldownKey(p.asset) !== k) continue;
+    const t = Date.parse(p.time || p.ts || "") || 0;
+    if (t >= cutoff) return false;
+  }
+  return true;
+}
+
+function buildFastGossipRow(asset, headline, intensity, prices) {
+  const px = priceNow(prices, asset);
+  if (px == null || !Number.isFinite(px)) return null;
+  const entry = px;
+  const target = entry * (1 + FAST_GOSSIP_TARGET_FRAC);
+  const now = new Date().toISOString();
+  const id = "aigf_" + Date.now() + "_" + assetCooldownKey(asset).toLowerCase() + "_" + Math.random().toString(36).slice(2, 7);
+  return {
+    id,
+    time: now,
+    source: "ai-gossip-fast",
+    asset,
+    call: "Long",
+    entry,
+    target: target.toFixed(2),
+    targetPct: "+0.4%",
+    timeframe: "20m",
+    horizon: "20m",
+    stopLossFrac: FAST_GOSSIP_STOP_FRAC,
+    why: `Fast gossip (intensity ${intensity}): ${String(headline).slice(0, 140)}`,
+    status: "open",
+    outcome: "—",
+  };
+}
+
+/** Called from GET /api/gossip after payload is built — throttled, reuses savePredictions + resolver. */
+function maybeFireFastGossipPredictions(articles, intensity, prices) {
+  if (intensity < FAST_GOSSIP_INT_MIN || !prices) return;
+  const valid = (articles || []).filter((a) => !gossipIsPlaceholderArticle(a));
+  if (!valid.length) return;
+  const merged = readAllPredictionsMerged();
+  const nowMs = Date.now();
+  const seen = new Set();
+  const batch = [];
+  for (const a of valid) {
+    const title = String(a.title || "");
+    const asset = detectFastGossipAsset(title);
+    if (!asset) continue;
+    const k = assetCooldownKey(asset);
+    if (seen.has(k)) continue;
+    if (!canAppendFastGossipForAsset(asset, merged, nowMs)) continue;
+    const row = buildFastGossipRow(asset, title, intensity, prices);
+    if (!row) continue;
+    seen.add(k);
+    batch.push(row);
+    merged.push(row);
+    if (batch.length >= 3) break;
+  }
+  if (batch.length) {
+    savePredictions(batch);
+    console.log("[FastGossip] Appended", batch.length, batch.map((r) => r.asset).join(", "));
+  }
+}
+
 let resolveRunning = false;
 async function resolvePredictions() {
   if (resolveRunning) return;
@@ -440,8 +526,11 @@ async function resolvePredictions() {
         continue;
       }
 
-      // Stop-loss: adverse move vs entry before target/expiry (aligned with PRED_STOP_LOSS_FRAC).
-      const stopLossPct = PRED_STOP_LOSS_FRAC;
+      // Stop-loss: optional per-row fraction (fast gossip lane); else global default.
+      const stopLossPct =
+        typeof p.stopLossFrac === "number" && Number.isFinite(p.stopLossFrac) && p.stopLossFrac > 0 && p.stopLossFrac < 0.5
+          ? p.stopLossFrac
+          : PRED_STOP_LOSS_FRAC;
       if (call === "long" && px <= entry * (1 - stopLossPct)) {
         p.status = "missed";
         p.outcome = `Stop-loss (${(stopLossPct * 100).toFixed(1)}% vs entry) @ ${px}`;
@@ -578,9 +667,15 @@ function handleRequest(req, res) {
 
   if (pathOnly === "/api/gossip") {
     fetchNewsWithCache()
-      .then((articles) => {
+      .then(async (articles) => {
         const body = gossipPayloadFromArticles(articles);
-        return res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(body));
+        try {
+          const prices = await fetchPrices();
+          maybeFireFastGossipPredictions(articles, body.intensity, prices);
+        } catch (e) {
+          console.log("[FastGossip]", e && e.message);
+        }
+        res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(body));
       })
       .catch(() =>
         res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ intensity: 0, spywords: [], alerts: [], headlines: [] }))
