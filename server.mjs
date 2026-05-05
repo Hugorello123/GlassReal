@@ -247,31 +247,168 @@ async function fetchPrices() {
   } catch { return null; }
 }
 
-/** Guru bias signals: symmetric target from entry; resolver uses PRED_STOP_LOSS_FRAC (keep RR sane). */
+/** Defaults (fallback for assets not configured in ASSET_REGIMES). */
 const PRED_TARGET_FRAC = 0.008;
-const PRED_TARGET_PCT_LABEL = `${(PRED_TARGET_FRAC * 100).toFixed(1)}%`;
 const PRED_STOP_LOSS_FRAC = 0.006;
+const PRED_WINDOW_HOURS = 12;
+
+/** Asset-specific target/stop/window. Values are percentages + hours. */
+const ASSET_REGIMES = {
+  Oil: { target: 0.8, stop: 0.6, windowHours: 12 },
+  Gold: { target: 0.8, stop: 0.6, windowHours: 12 },
+  BTC: { target: 2.5, stop: 1.5, windowHours: 24 },
+  ETH: { target: 2.5, stop: 1.5, windowHours: 24 },
+  TSLA: { target: 1.2, stop: 0.8, windowHours: 4 },
+};
+
+const TREND_YAHOO_TICKERS = {
+  BTC: "BTC-USD",
+  ETH: "ETH-USD",
+  GOLD: "GC=F",
+  OIL: "CL=F",
+  TSLA: "TSLA",
+};
+
+const TREND_CACHE_MS = 10 * 60 * 1000;
+const trendGateCache = new Map();
+const COOLDOWN_LOSS_STREAK = 3;
+const COOLDOWN_MS = 12 * 60 * 60 * 1000;
+
+function getAssetRegime(asset) {
+  const key = assetCooldownKey(asset);
+  const cfg = ASSET_REGIMES[key];
+  return {
+    targetFrac: ((cfg?.target ?? (PRED_TARGET_FRAC * 100)) / 100),
+    stopFrac: ((cfg?.stop ?? (PRED_STOP_LOSS_FRAC * 100)) / 100),
+    windowHours: cfg?.windowHours ?? PRED_WINDOW_HOURS,
+  };
+}
+
+function pctLabel(frac, call) {
+  const sign = String(call || "").toLowerCase() === "short" ? "-" : "+";
+  return `${sign}${(frac * 100).toFixed(1)}%`;
+}
+
+async function fetchTrendSnapshot(asset) {
+  const key = assetCooldownKey(asset);
+  const ticker = TREND_YAHOO_TICKERS[key];
+  if (!ticker) return null;
+
+  const cached = trendGateCache.get(key);
+  if (cached && (Date.now() - cached.ts) < TREND_CACHE_MS) return cached.data;
+
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=7d&interval=1d`;
+  const json = await fetch(url, {
+    signal: AbortSignal.timeout(7000),
+    headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" },
+  }).then((r) => {
+    if (!r.ok) throw new Error(`yahoo ${r.status}`);
+    return r.json();
+  });
+
+  const result = json?.chart?.result?.[0];
+  const closesRaw = result?.indicators?.quote?.[0]?.close || [];
+  const closes = closesRaw.map((x) => Number(x)).filter((n) => Number.isFinite(n));
+  if (closes.length < 2) throw new Error("insufficient close data");
+  const snap = { ago: closes[0], current: closes[closes.length - 1] };
+  trendGateCache.set(key, { ts: Date.now(), data: snap });
+  return snap;
+}
+
+/** Fail-open by design: Yahoo outage should not stop all predictions. */
+async function checkTrendFilter(asset, call) {
+  const dir = String(call || "").toLowerCase() === "short" ? "Short" : "Long";
+  try {
+    const snap = await fetchTrendSnapshot(asset);
+    if (!snap) return true;
+    if (dir === "Short" && snap.current > snap.ago) {
+      console.log(`[TrendGate] BLOCKED ${asset} Short — 7d trend is UP (${snap.ago} → ${snap.current}).`);
+      return false;
+    }
+    if (dir === "Long" && snap.current < snap.ago) {
+      console.log(`[TrendGate] BLOCKED ${asset} Long — 7d trend is DOWN (${snap.ago} → ${snap.current}).`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.log(`[TrendGate] WARN ${asset} ${dir} — fail-open (${e?.message || e})`);
+    return true;
+  }
+}
+
+/** Consecutive misses gate for exact asset + call at the head of prediction history. */
+function checkCooldownGate(asset, call, newestFirst) {
+  try {
+    const targetAsset = assetCooldownKey(asset);
+    const targetCall = String(call || "").toLowerCase() === "short" ? "short" : "long";
+    let losses = 0;
+    let lastMissTs = 0;
+    for (const p of newestFirst) {
+      const pAsset = assetCooldownKey(p.asset);
+      const pCall = String(p.call || "").toLowerCase() === "short" ? "short" : "long";
+      if (pAsset !== targetAsset || pCall !== targetCall) break;
+      const st = String(p.status || "").toLowerCase();
+      if (st === "missed") {
+        losses++;
+        if (!lastMissTs) {
+          lastMissTs = Date.parse(p.resolvedAt || p.updatedAt || p.time || p.ts || "") || 0;
+        }
+        continue;
+      }
+      if (st === "hit") break;
+      break;
+    }
+    if (losses >= COOLDOWN_LOSS_STREAK && lastMissTs) {
+      const until = lastMissTs + COOLDOWN_MS;
+      if (Date.now() < until) {
+        console.log(`[CooldownGate] BLOCKED ${asset} ${String(call)} — ${losses} consecutive losses, cooling down until ${new Date(until).toISOString()}.`);
+        return false;
+      }
+    }
+    return true;
+  } catch (e) {
+    console.log(`[CooldownGate] WARN ${asset} ${String(call)} — fail-open (${e?.message || e})`);
+    return true;
+  }
+}
 
 function generateSignals(prices) {
   const signals = [];
   if (!prices) return signals;
   const now = new Date().toISOString();
   const ts = Date.now();
-  const up = 1 + PRED_TARGET_FRAC;
-  const down = 1 - PRED_TARGET_FRAC;
-  const pctLong = "+" + PRED_TARGET_PCT_LABEL;
-  const pctShort = "-" + PRED_TARGET_PCT_LABEL;
-  if (prices.btcCh !== null && prices.btcCh < -1.5) signals.push({ id: "sig_" + ts + "_btc_long", time: now, asset: "BTC", call: "Long", entry: prices.btc, target: (prices.btc * up).toFixed(2), targetPct: pctLong, timeframe: "12h", why: `BTC oversold (${prices.btcCh.toFixed(2)}% 24h). Expect bounce.`, horizon: "12h", status: "open", outcome: "—" });
-  if (prices.btcCh !== null && prices.btcCh > 1.5) signals.push({ id: "sig_" + ts + "_btc_short", time: now, asset: "BTC", call: "Short", entry: prices.btc, target: (prices.btc * down).toFixed(2), targetPct: pctShort, timeframe: "12h", why: `BTC overbought (+${prices.btcCh.toFixed(2)}% 24h). Expect pullback.`, horizon: "12h", status: "open", outcome: "—" });
-  if (prices.eth != null && prices.ethCh !== null && prices.ethCh < -1.5) signals.push({ id: "sig_" + ts + "_eth_long", time: now, asset: "ETH", call: "Long", entry: prices.eth, target: (prices.eth * up).toFixed(2), targetPct: pctLong, timeframe: "12h", why: `ETH oversold (${prices.ethCh.toFixed(2)}% 24h). Expect bounce.`, horizon: "12h", status: "open", outcome: "—" });
-  if (prices.eth != null && prices.ethCh !== null && prices.ethCh > 1.5) signals.push({ id: "sig_" + ts + "_eth_short", time: now, asset: "ETH", call: "Short", entry: prices.eth, target: (prices.eth * down).toFixed(2), targetPct: pctShort, timeframe: "12h", why: `ETH overbought (+${prices.ethCh.toFixed(2)}% 24h). Expect pullback.`, horizon: "12h", status: "open", outcome: "—" });
-  if (prices.goldCh !== null && prices.goldCh > 0.5) signals.push({ id: "sig_" + ts + "_gold_long", time: now, asset: "Gold", call: "Long", entry: prices.gold, target: (prices.gold * up).toFixed(2), targetPct: pctLong, timeframe: "6h", why: `Gold breaking (+${prices.goldCh.toFixed(2)}% 24h). Safe-haven flow.`, horizon: "6h", status: "open", outcome: "—" });
-  if (prices.goldCh !== null && prices.goldCh < -0.5) signals.push({ id: "sig_" + ts + "_gold_short", time: now, asset: "Gold", call: "Short", entry: prices.gold, target: (prices.gold * down).toFixed(2), targetPct: pctShort, timeframe: "6h", why: `Gold selling off (${prices.goldCh.toFixed(2)}% 24h). Risk-on tone.`, horizon: "6h", status: "open", outcome: "—" });
+  function pushGuruSignal(asset, call, entry, why, idSuffix) {
+    const regime = getAssetRegime(asset);
+    const isShort = String(call).toLowerCase() === "short";
+    const target = entry * (isShort ? (1 - regime.targetFrac) : (1 + regime.targetFrac));
+    const win = `${regime.windowHours}h`;
+    signals.push({
+      id: "sig_" + ts + "_" + idSuffix,
+      time: now,
+      asset,
+      call,
+      entry,
+      target: target.toFixed(2),
+      targetPct: pctLabel(regime.targetFrac, call),
+      timeframe: win,
+      why,
+      horizon: win,
+      stopLossFrac: regime.stopFrac,
+      status: "open",
+      outcome: "—",
+    });
+  }
+  if (prices.btcCh !== null && prices.btcCh < -1.5) pushGuruSignal("BTC", "Long", prices.btc, `BTC oversold (${prices.btcCh.toFixed(2)}% 24h). Expect bounce.`, "btc_long");
+  if (prices.btcCh !== null && prices.btcCh > 1.5) pushGuruSignal("BTC", "Short", prices.btc, `BTC overbought (+${prices.btcCh.toFixed(2)}% 24h). Expect pullback.`, "btc_short");
+  if (prices.eth != null && prices.ethCh !== null && prices.ethCh < -1.5) pushGuruSignal("ETH", "Long", prices.eth, `ETH oversold (${prices.ethCh.toFixed(2)}% 24h). Expect bounce.`, "eth_long");
+  if (prices.eth != null && prices.ethCh !== null && prices.ethCh > 1.5) pushGuruSignal("ETH", "Short", prices.eth, `ETH overbought (+${prices.ethCh.toFixed(2)}% 24h). Expect pullback.`, "eth_short");
+  if (prices.goldCh !== null && prices.goldCh > 0.5) pushGuruSignal("Gold", "Long", prices.gold, `Gold breaking (+${prices.goldCh.toFixed(2)}% 24h). Safe-haven flow.`, "gold_long");
+  if (prices.goldCh !== null && prices.goldCh < -0.5) pushGuruSignal("Gold", "Short", prices.gold, `Gold selling off (${prices.goldCh.toFixed(2)}% 24h). Risk-on tone.`, "gold_short");
   /* Oil / TSLA: session vs prior close from Yahoo (not CoinGecko 24h). Same target band as other guru signals. */
-  if (prices.oil != null && prices.oilCh != null && prices.oilCh < -2) signals.push({ id: "sig_" + ts + "_oil_long", time: now, asset: "Oil", call: "Long", entry: prices.oil, target: (prices.oil * up).toFixed(2), targetPct: pctLong, timeframe: "6h", why: `WTI weak (${prices.oilCh.toFixed(2)}% vs prior). Mean reversion watch.`, horizon: "6h", status: "open", outcome: "—" });
-  if (prices.oil != null && prices.oilCh != null && prices.oilCh > 2) signals.push({ id: "sig_" + ts + "_oil_short", time: now, asset: "Oil", call: "Short", entry: prices.oil, target: (prices.oil * down).toFixed(2), targetPct: pctShort, timeframe: "6h", why: `WTI strong (+${prices.oilCh.toFixed(2)}% vs prior). Pullback watch.`, horizon: "6h", status: "open", outcome: "—" });
-  if (prices.tsla != null && prices.tslaCh != null && prices.tslaCh < -2.5) signals.push({ id: "sig_" + ts + "_tsla_long", time: now, asset: "TSLA", call: "Long", entry: prices.tsla, target: (prices.tsla * up).toFixed(2), targetPct: pctLong, timeframe: "12h", why: `TSLA soft (${prices.tslaCh.toFixed(2)}% vs prior). Bounce watch.`, horizon: "12h", status: "open", outcome: "—" });
-  if (prices.tsla != null && prices.tslaCh != null && prices.tslaCh > 2.5) signals.push({ id: "sig_" + ts + "_tsla_short", time: now, asset: "TSLA", call: "Short", entry: prices.tsla, target: (prices.tsla * down).toFixed(2), targetPct: pctShort, timeframe: "12h", why: `TSLA hot (+${prices.tslaCh.toFixed(2)}% vs prior). Fade watch.`, horizon: "12h", status: "open", outcome: "—" });
+  if (prices.oil != null && prices.oilCh != null && prices.oilCh < -2) pushGuruSignal("Oil", "Long", prices.oil, `WTI weak (${prices.oilCh.toFixed(2)}% vs prior). Mean reversion watch.`, "oil_long");
+  if (prices.oil != null && prices.oilCh != null && prices.oilCh > 2) pushGuruSignal("Oil", "Short", prices.oil, `WTI strong (+${prices.oilCh.toFixed(2)}% vs prior). Pullback watch.`, "oil_short");
+  if (prices.tsla != null && prices.tslaCh != null && prices.tslaCh < -2.5) pushGuruSignal("TSLA", "Long", prices.tsla, `TSLA soft (${prices.tslaCh.toFixed(2)}% vs prior). Bounce watch.`, "tsla_long");
+  if (prices.tsla != null && prices.tslaCh != null && prices.tslaCh > 2.5) pushGuruSignal("TSLA", "Short", prices.tsla, `TSLA hot (+${prices.tslaCh.toFixed(2)}% vs prior). Fade watch.`, "tsla_short");
   return signals;
 }
 
@@ -604,9 +741,16 @@ async function runSignalEngine() {
   lastSignalRun = now;
   const prices = await fetchPrices();
   const raw = generateSignals(prices);
-  const signals = throttleSignalsByAsset(raw, SIGNAL_ASSET_COOLDOWN_MS);
-  if (raw.length && !signals.length) {
+  const throttled = throttleSignalsByAsset(raw, SIGNAL_ASSET_COOLDOWN_MS);
+  if (raw.length && !throttled.length) {
     console.log("[Signals] Throttled — each asset already has a prediction within", Math.round(SIGNAL_ASSET_COOLDOWN_MS / 60000), "min");
+  }
+  const newestFirst = readAllPredictionsMerged().sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")));
+  const signals = [];
+  for (const s of throttled) {
+    if (!(await checkTrendFilter(s.asset, s.call))) continue;
+    if (!checkCooldownGate(s.asset, s.call, newestFirst)) continue;
+    signals.push(s);
   }
   if (signals.length) {
     savePredictions(signals);
