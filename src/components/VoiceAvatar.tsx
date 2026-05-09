@@ -3,9 +3,9 @@ import { useLocation } from "react-router";
 
 const GUIDES: Record<string, string> = {
   "/": "Welcome to Sentotrade. Pick a plan that fits — Trial for a day, or RAW for full access. Then log in to see your dashboard.",
-  "/hub": "Pro Hub. This is your launchpad. Pick Dashboard for live prices, Watchdog for news, or Predictions to track your calls.",
+  "/hub": "Pro Hub. This is your launchpad. Pick Dashboard for live prices, Watchdog for news, or Live Edge Tests to see transparent signal experiments.",
   "/dashboard": "Dashboard. Live prices and whale alerts here. Start with the gossip widget — high intensity means something is moving.",
-  "/predictions": "Predictions. Add a trade idea, set a target, and let it run. Come back to score it hit, missed, or partial.",
+  "/predictions": "Live Edge Tests. These are transparent signal experiments — not trade recommendations. Add your own test, set a target, and come back to score it hit, missed, or partial.",
   "/guru": "Guru. Ask anything — Bitcoin outlook, oil risk, what to watch. Answers come from Sentotrade data only. No outside noise.",
   "/watchdog": "Watchdog. News scan and sentiment radar. Look for the themes with the most headlines — that is where volatility lives.",
   "/indices": "Indices. Check macro levels — S and P, Nasdaq, DXY. Big index moves often spill into crypto and commodities.",

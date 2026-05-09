@@ -68,11 +68,11 @@ const CARDS: HubCard[] = [
   },
   {
     id: "predictions",
-    title: "Predictions",
-    desc: "Auto + manual calls with outcome tracking. What we said vs what happened.",
+    title: "Live Edge Tests",
+    desc: "Transparent simulated tests — not trade calls. Signal logic, entry, target, and honest outcomes.",
     to: "/predictions",
     status: "live",
-    icon: "🔭",
+    icon: "🧪",
     color: "from-teal-500/20 to-cyan-500/20",
   },
   {

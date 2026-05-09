@@ -79,7 +79,7 @@ export default function StatsPage() {
 
       <div className="max-w-6xl mx-auto px-4 py-6">
         <h1 className="text-2xl font-bold mb-1">Sentotrade Dashboard</h1>
-        <p className="text-sm text-gray-400 mb-6">Sentotrade auto-generates predictions from gossip spikes — no human input.</p>
+        <p className="text-sm text-gray-400 mb-6">Sentotrade runs simulated sentiment tests from gossip spikes — no human input.</p>
 
         {/* ── AI Intelligence Track Record ── */}
         <section className="mb-8">
@@ -90,7 +90,7 @@ export default function StatsPage() {
             <div className="bg-gray-900/50 border border-cyan-500/20 rounded-xl p-5 text-center">
               <div className="text-xs text-cyan-400 font-semibold uppercase tracking-wider mb-2">AI-Gossip</div>
               <div className="text-4xl font-bold mb-2">{serverPredictions.length}</div>
-              <div className="text-sm text-gray-400 mb-2">Auto predictions</div>
+              <div className="text-sm text-gray-400 mb-2">Simulated sentiment tests</div>
               <div className="text-lg text-green-400">
                 {rec.hit + rec.missed + rec.partial > 0
                   ? Math.round(((rec.hit + rec.partial * 0.5) / (rec.hit + rec.missed + rec.partial)) * 100) + "%"
@@ -120,7 +120,7 @@ export default function StatsPage() {
             <div className="bg-gray-900/50 border border-gray-500/20 rounded-xl p-5 text-center">
               <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">Manual</div>
               <div className="text-4xl font-bold mb-2">{manual.length}</div>
-              <div className="text-sm text-gray-400 mb-2">Your predictions</div>
+              <div className="text-sm text-gray-400 mb-2">Your tests</div>
               <div className="text-lg text-gray-300">{manualScored.length > 0 ? manualRate + "%" : "--"}</div>
             </div>
           </div>
@@ -142,7 +142,7 @@ export default function StatsPage() {
             </div>
             <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 text-center">
               <div className="text-2xl font-bold text-yellow-400">{summary?.categories?.prediction || 0}</div>
-              <div className="text-xs text-gray-500 mt-1">Predictions</div>
+              <div className="text-xs text-gray-500 mt-1">Edge Tests</div>
             </div>
             <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 text-center">
               <div className="text-2xl font-bold text-purple-400">{summary?.lastNewsCount || 0}</div>
@@ -153,7 +153,7 @@ export default function StatsPage() {
 
         {/* ── Prediction Record ── */}
         <section className="mb-8">
-          <h3 className="text-lg font-semibold mb-3">Prediction Record</h3>
+          <h3 className="text-lg font-semibold mb-3">Test Record</h3>
           <div className="grid grid-cols-4 gap-3">
             <div className="bg-green-900/20 border border-green-700 rounded-lg p-3 text-center">
               <div className="text-2xl font-bold text-green-400">{rec.hit}</div>

@@ -115,7 +115,7 @@ export default function StatsSummarySplitCard() {
               <span className="text-gray-500">Bias samples:</span> {cat.bias}
             </li>
             <li>
-              <span className="text-gray-500">Prediction events:</span> {cat.prediction}
+              <span className="text-gray-500">Test events:</span> {cat.prediction}
             </li>
             <li>
               <span className="text-gray-500">News snapshots:</span> {cat.news}

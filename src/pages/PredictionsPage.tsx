@@ -218,7 +218,7 @@ export default function PredictionsPage() {
       <main className="min-h-screen bg-gradient-to-br from-black to-gray-900 text-white">
         <div className="max-w-4xl mx-auto px-6 py-10">
           <div className="flex items-center justify-between mb-2">
-            <h1 className="text-4xl font-bold">🔭 Predictions</h1>
+            <h1 className="text-4xl font-bold">🧪 Live Edge Tests</h1>
             {!HIDE_LOCAL_PREDICTION_TRACKER && (
               <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-center max-w-[155px]">
                 <div className="text-2xl font-bold text-green-400">
@@ -241,7 +241,7 @@ export default function PredictionsPage() {
               <div>
                 <h2 className="text-xl font-bold text-cyan-300 m-0">AI Intelligence Track Record</h2>
                 <p className="text-sm text-gray-300 mt-1 leading-relaxed max-w-xl">
-                  Sentotrade auto-generates predictions from gossip spikes — no human input
+                  Sentotrade runs simulated sentiment tests from gossip spikes — no human input
                 </p>
               </div>
             </div>
@@ -265,13 +265,13 @@ export default function PredictionsPage() {
             </div>
 
             <div className="bg-white/5 border border-white/10 rounded-lg p-4 text-sm text-gray-300 leading-relaxed">
-              <strong className="text-gray-100">How predictions work:</strong> Our system continuously scans live market data, news sentiment, and on-chain signals. When a strong pattern emerges (Guru Bias) or a gossip spike crosses the threshold (AI-Gossip), it auto-generates a prediction with entry, target, and timeframe. You can also add your own calls below; those stay in this browser only. Each prediction is resolved automatically or manually scored as Hit, Partial, or Missed.
+              <strong className="text-gray-100">How live edge tests work:</strong> Our system continuously scans live market data, news sentiment, and on-chain signals. When a strong pattern emerges (Guru Bias) or a gossip spike crosses the threshold (AI-Gossip), it runs a simulated sentiment test with entry, target, and timeframe. These are transparent experiments, not trade recommendations. You can also add your own calls below; those stay in this browser only. Each test is resolved automatically or manually scored as Hit, Partial, or Missed.
             </div>
           </section>
 
           <section className="mb-10" aria-labelledby="server-signals-heading">
             <h2 id="server-signals-heading" className="text-lg font-semibold text-white mb-1">
-              Live signals (server)
+              Live edge tests (server)
             </h2>
             <p className="text-sm text-gray-400 mb-3 leading-relaxed">
               Auto-generated from live prices; times use your device&apos;s timezone.
@@ -397,7 +397,7 @@ export default function PredictionsPage() {
               onClick={() => setShowForm(!showForm)}
               className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg transition"
             >
-              {showForm ? "Cancel" : "+ Add Prediction"}
+              {showForm ? "Cancel" : "+ Add Test"}
             </button>
           </div>
           )}
@@ -458,7 +458,7 @@ export default function PredictionsPage() {
                 onClick={addPrediction}
                 className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition"
               >
-                Save Prediction
+                Save Test
               </button>
             </div>
           )}
@@ -466,9 +466,9 @@ export default function PredictionsPage() {
           {/* List */}
           {!HIDE_LOCAL_PREDICTION_TRACKER && predictions.length === 0 ? (
             <div className="bg-white/5 border border-white/10 rounded-xl p-8 text-center">
-              <p className="text-gray-300">No predictions tracked yet.</p>
+              <p className="text-gray-300">No tests tracked yet.</p>
               <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-                Click "Add Prediction" to start tracking your calls. All data stays in your browser.
+                Click "Add Test" to start tracking your calls. All data stays in your browser.
               </p>
             </div>
           ) : !HIDE_LOCAL_PREDICTION_TRACKER ? (
