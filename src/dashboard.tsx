@@ -63,7 +63,7 @@ function usePredictionStats() {
 }
 
 export default function Dashboard() {
-  if (typeof window !== "undefined") window.scrollTo(0,0);
+  useEffect(() => { window.scrollTo(0, 0); }, []);
   const [guruTopic, setGuruTopic] = useState<string | undefined>(undefined);
   const pulse = useMarketPulse();
   const stats = usePredictionStats();
