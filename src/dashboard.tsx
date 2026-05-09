@@ -32,6 +32,37 @@ export default function Dashboard() {
           Sentotrade Dashboard
         </h1>
 
+        {/* MARKET PULSE HERO */}
+        <section className="w-full mb-8 rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-slate-900 to-black p-6 shadow-lg shadow-cyan-500/5">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🌐</span>
+              <div>
+                <h2 className="text-lg font-bold text-cyan-400 tracking-wide">MARKET PULSE</h2>
+                <p className="text-xs text-slate-400">
+                  Real-time sentiment pressure across crypto, equities, commodities and macro.
+                </p>
+              </div>
+            </div>
+            <div className="text-left md:text-right">
+              <div className="text-xs text-slate-400 uppercase tracking-wider">Intensity</div>
+              <div className="text-2xl font-bold text-amber-400">Quiet</div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-700/50 bg-black/30 p-4 mb-4">
+            <div className="text-sm text-slate-300">
+              Quiet for now — scanning news, on-chain and market pressure every minute.
+            </div>
+          </div>
+
+          <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-6 text-xs text-slate-400 border-t border-slate-700/50 pt-3">
+            <span>Live Edge Tests: tracking simulated signals transparently</span>
+            <span>Logic chain: Headline → Sentiment → Price context → Test</span>
+            <span className="text-cyan-500/70 md:ml-auto">Data wiring comes next</span>
+          </div>
+        </section>
+
         {/* Top two big price blocks */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
           <EthPrice />
