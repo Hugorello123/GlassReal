@@ -180,7 +180,7 @@ export default function ProDashboardPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-green-400">
-                Pro Dashboard
+                Trader Desk
               </h1>
               <p className="text-gray-400 text-sm mt-1">
                 Session bias, exchange flows, signals & analogs — real data only

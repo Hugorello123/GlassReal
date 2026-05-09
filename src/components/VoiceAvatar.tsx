@@ -3,14 +3,14 @@ import { useLocation } from "react-router";
 
 const GUIDES: Record<string, string> = {
   "/": "Welcome to Sentotrade. Pick a plan that fits — Trial for a day, or RAW for full access. Then log in to see your dashboard.",
-  "/hub": "Pro Hub. This is your launchpad. Pick Dashboard for live prices, Watchdog for news, or Live Edge Tests to see transparent signal experiments.",
+  "/hub": "Trader Hub. This is your launchpad. Pick Dashboard for live prices, Watchdog for news, or Live Edge Tests to see transparent signal experiments.",
   "/dashboard": "Dashboard. Live prices and whale alerts here. Start with the gossip widget — high intensity means something is moving.",
   "/predictions": "Live Edge Tests. These are transparent signal experiments — not trade recommendations. Add your own test, set a target, and come back to score it hit, missed, or partial.",
   "/guru": "Guru. Ask anything — Bitcoin outlook, oil risk, what to watch. Answers come from Sentotrade data only. No outside noise.",
   "/watchdog": "Watchdog. News scan and sentiment radar. Look for the themes with the most headlines — that is where volatility lives.",
   "/indices": "Indices. Check macro levels — S and P, Nasdaq, DXY. Big index moves often spill into crypto and commodities.",
   "/stats": "Stats. Your scorecard. See which calls worked, which didn't, and where you are strongest.",
-  "/pro": "Pro. Layer the signals. Combine gossip intensity, price action, and Guru insight before you decide.",
+  "/pro": "Trader Desk. Layer the signals. Combine gossip intensity, price action, and Guru insight before you decide.",
   "/tutor": "Trading 101. Long means up, short means down. Risk only what you can lose. And always confirm gossip with price.",
   default: "Sentotrade guide. Tap this button on any page for a voice walkthrough.",
 };

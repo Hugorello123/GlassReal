@@ -23,7 +23,7 @@ const CARDS: HubCard[] = [
   },
   {
     id: "pro",
-    title: "Pro Dashboard",
+    title: "Trader Desk",
     desc: "Session bias, exchange flows, signals & analogs — the full trading terminal.",
     to: "/pro",
     status: "live",
@@ -111,7 +111,7 @@ export default function ProHubPage() {
           {/* Header */}
           <div className="mb-10">
             <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-600">
-              🎛️ Pro Hub
+              🎛️ Trader Hub
             </h1>
             <p className="text-gray-400 mt-2 max-w-xl">
               Your trading command center. Every tool, every signal, every insight — one click away.
@@ -177,7 +177,7 @@ export default function ProHubPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-gray-300">Pro Dashboard</span>
+                <span className="text-gray-300">Trader Desk</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-500" />

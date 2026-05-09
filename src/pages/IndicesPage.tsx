@@ -107,7 +107,7 @@ export default function IndicesPage() {
 
           <div className="mt-8 text-center">
             <Link to="/hub" className="text-cyan-400 hover:underline">
-              ← Back to Pro Hub
+              ← Back to Trader Hub
             </Link>
           </div>
         </div>

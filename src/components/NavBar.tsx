@@ -9,8 +9,8 @@ export default function NavBar({ current }: NavBarProps) {
   const pages = [
     { id: "landing", label: "🏠 Home", to: "/" },
     { id: "dashboard", label: "📊 Dashboard", to: "/dashboard" },
-    { id: "hub", label: "🎛️ Pro Hub", to: "/hub" },
-    { id: "pro", label: "⚡ Pro", to: "/pro" },
+    { id: "hub", label: "🎛️ Trader Hub", to: "/hub" },
+    { id: "pro", label: "⚡ Trader Desk", to: "/pro" },
     { id: "watchdog", label: "🛡️ Watchdog", to: "/watchdog" },
     { id: "guru", label: "🔮 Guru", to: "/guru" },
     { id: "indices", label: "📈 Indices", to: "/indices" },

@@ -58,7 +58,7 @@ const Landing = () => {
             className="flex flex-col items-center p-4 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 hover:from-cyan-500/20 hover:to-blue-500/20 rounded-xl transition text-center group border border-cyan-500/20"
           >
             <span className="text-2xl mb-2 group-hover:scale-110 transition">🎛️</span>
-            <span className="font-semibold text-sm text-cyan-300">Pro Hub</span>
+            <span className="font-semibold text-sm text-cyan-300">Trader Hub</span>
             <span className="text-xs text-gray-500 mt-1">All tools, one control room</span>
           </Link>
 

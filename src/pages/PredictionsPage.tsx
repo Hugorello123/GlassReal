@@ -558,7 +558,7 @@ export default function PredictionsPage() {
           ) : null}
 
           <div className="mt-8 text-center">
-            <Link to="/hub" className="text-cyan-400 hover:underline">← Back to Pro Hub</Link>
+            <Link to="/hub" className="text-cyan-400 hover:underline">← Back to Trader Hub</Link>
           </div>
         </div>
       </main>
