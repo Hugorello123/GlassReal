@@ -19,6 +19,28 @@ import TeslaBox from "@/components/TeslaBox";
 import IntelligenceFeed from "@/lib/IntelligenceFeed";
 import GuruDrawer from "@/components/GuruDrawer";
 import NavBar from "@/components/NavBar";
+import { buildThemes, type WatchdogTheme } from "@/lib/watchdogThemes";
+
+function useTopWatchdogTheme() {
+  const [theme, setTheme] = useState<WatchdogTheme | null>(null);
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      try {
+        const r = await fetch("/api/news", { cache: "no-store" });
+        const d = await r.json();
+        const articles = d.articles || [];
+        const themes = buildThemes(articles);
+        const top = themes.find((t) => t.heat > 0) ?? null;
+        if (alive) setTheme(top);
+      } catch { /* silent */ }
+    }
+    load();
+    const id = setInterval(load, 120000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+  return theme;
+}
 
 function useMarketPulse() {
   const [data, setData] = useState<{ intensity: number; spywords: string[]; alerts: string[] } | null>(null);
@@ -67,6 +89,7 @@ export default function Dashboard() {
   const [guruTopic, setGuruTopic] = useState<string | undefined>(undefined);
   const pulse = useMarketPulse();
   const stats = usePredictionStats();
+  const topTheme = useTopWatchdogTheme();
   const intensityCfg = pulse
     ? pulse.intensity <= 2 ? { label: "Quiet", color: "text-amber-400" }
     : pulse.intensity <= 5 ? { label: "Active", color: "text-green-400" }
@@ -104,6 +127,24 @@ export default function Dashboard() {
               {pulse.spywords.slice(0, 6).map((word, i) => (
                 <span key={i} className="text-xs px-2 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">{word}</span>
               ))}
+            </div>
+          )}
+
+          {topTheme && topTheme.heat > 0 && (
+            <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-lg bg-orange-500/10 border border-orange-500/20">
+              <span className="text-sm">🔥</span>
+              <div className="text-sm">
+                <span className="text-orange-400 font-semibold">Dominant Theme: {topTheme.name}</span>
+                <span className="text-slate-400 mx-2">•</span>
+                <span className="text-xs text-slate-400">{topTheme.category.replace(/-/g, " ")}</span>
+                {topTheme.impacts.length > 0 && (
+                  <span className="text-xs text-slate-500 ml-2">
+                    {topTheme.impacts.slice(0, 3).map((imp, idx) => (
+                      <span key={idx} className="ml-1">{imp.asset} {imp.direction}</span>
+                    ))}
+                  </span>
+                )}
+              </div>
             </div>
           )}
 
