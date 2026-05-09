@@ -1,7 +1,7 @@
 // src/dashboard.tsx
 import MarketSlots from "@/components/MarketSlots";
 // src/dashboard.tsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import EquitiesCommoditiesPanel from "@/components/EquitiesCommoditiesPanel";
 
 import EthPrice from "@/lib/eth";
@@ -20,9 +20,58 @@ import IntelligenceFeed from "@/lib/IntelligenceFeed";
 import GuruDrawer from "@/components/GuruDrawer";
 import NavBar from "@/components/NavBar";
 
+function useMarketPulse() {
+  const [data, setData] = useState<{ intensity: number; spywords: string[]; alerts: string[] } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      try {
+        const r = await fetch("/api/gossip", { cache: "no-store" });
+        const d = await r.json();
+        if (alive) setData(d);
+      } catch { /* silent */ }
+    }
+    load();
+    const id = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+  return data;
+}
+
+function usePredictionStats() {
+  const [open, setOpen] = useState<number | null>(null);
+  const [hitrate, setHitrate] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      try {
+        const r = await fetch("/api/predictions?limit=1", { cache: "no-store" });
+        const d = await r.json();
+        const rec = d.record || {};
+        if (alive) {
+          setOpen(rec.open ?? null);
+          const total = (rec.hit || 0) + (rec.missed || 0) + (rec.partial || 0);
+          setHitrate(total > 0 ? Math.round(((rec.hit || 0) + (rec.partial || 0) * 0.5) / total * 100) : 0);
+        }
+      } catch { /* silent */ }
+    }
+    load();
+    const id = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+  return { open, hitrate };
+}
+
 export default function Dashboard() {
   if (typeof window !== "undefined") window.scrollTo(0,0);
   const [guruTopic, setGuruTopic] = useState<string | undefined>(undefined);
+  const pulse = useMarketPulse();
+  const stats = usePredictionStats();
+  const intensityCfg = pulse
+    ? pulse.intensity <= 2 ? { label: "Quiet", color: "text-amber-400" }
+    : pulse.intensity <= 5 ? { label: "Active", color: "text-green-400" }
+    : { label: "High", color: "text-red-500" }
+    : { label: "Quiet", color: "text-amber-400" };
 
   return (
     <>
@@ -39,27 +88,41 @@ export default function Dashboard() {
               <span className="text-2xl">🌐</span>
               <div>
                 <h2 className="text-lg font-bold text-cyan-400 tracking-wide">MARKET PULSE</h2>
-                <p className="text-xs text-slate-400">
-                  Real-time sentiment pressure across crypto, equities, commodities and macro.
-                </p>
+                <p className="text-xs text-slate-400">Real-time sentiment pressure across crypto, equities, commodities and macro.</p>
               </div>
             </div>
             <div className="text-left md:text-right">
               <div className="text-xs text-slate-400 uppercase tracking-wider">Intensity</div>
-              <div className="text-2xl font-bold text-amber-400">Quiet</div>
+              <div className={`text-2xl font-bold ${intensityCfg.color}`}>
+                {pulse ? `${pulse.intensity}/10 ${intensityCfg.label}` : "—"}
+              </div>
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-700/50 bg-black/30 p-4 mb-4">
-            <div className="text-sm text-slate-300">
-              Quiet for now — scanning news, on-chain and market pressure every minute.
+          {pulse?.spywords && pulse.spywords.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {pulse.spywords.slice(0, 6).map((word, i) => (
+                <span key={i} className="text-xs px-2 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">{word}</span>
+              ))}
             </div>
+          )}
+
+          <div className="rounded-xl border border-slate-700/50 bg-black/30 p-4 mb-4">
+            {pulse?.alerts && pulse.alerts.length > 0 ? (
+              <div className="space-y-2">
+                {pulse.alerts.slice(0, 3).map((alert, i) => (
+                  <div key={i} className="text-sm text-slate-300">{alert}</div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-slate-400">Quiet for now — scanning news, on-chain and market pressure every minute.</div>
+            )}
           </div>
 
           <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-6 text-xs text-slate-400 border-t border-slate-700/50 pt-3">
-            <span>Live Edge Tests: tracking simulated signals transparently</span>
-            <span>Logic chain: Headline → Sentiment → Price context → Test</span>
-            <span className="text-cyan-500/70 md:ml-auto">Data wiring comes next</span>
+            <span>Live Edge Tests: {stats.open !== null ? stats.open : "—"} active</span>
+            <span>Today's accuracy: {stats.hitrate !== null ? `${stats.hitrate}%` : "—"}</span>
+            <span className="text-cyan-500/70 md:ml-auto">Updates every 60s</span>
           </div>
         </section>
 
