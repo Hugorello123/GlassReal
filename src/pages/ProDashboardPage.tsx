@@ -301,7 +301,7 @@ export default function ProDashboardPage() {
                             {s.signal}
                           </span>
                         </td>
-                        <td className="py-2 px-2 text-gray-400 max-w-[300px] truncate">{s.why}</td>
+                        <td className="py-2 px-2 text-gray-400 max-w-[400px] whitespace-normal">{s.why}</td>
                         <td className="py-2 px-2 text-gray-400">{s.horizon}</td>
                         <td className="py-2 px-2 text-gray-300">{s.outcome}</td>
                       </tr>

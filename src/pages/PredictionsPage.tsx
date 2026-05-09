@@ -351,13 +351,14 @@ export default function PredictionsPage() {
                             </td>
                             <td className="px-3 py-3 text-gray-300 text-xs max-w-[220px]">{row.outcome || "—"}</td>
                           </tr>
-                          {row.why ? (
-                            <tr className="border-b border-white/5 bg-black/25">
-                              <td colSpan={8} className="px-3 py-2 text-xs text-gray-400">
-                                {row.why}
+                          {row.why && (
+                            <tr className="border-b border-white/5 bg-cyan-950/20">
+                              <td colSpan={8} className="px-3 py-2">
+                                <span className="text-xs font-semibold text-cyan-400 mr-2">🔍 Why this fired:</span>
+                                <span className="text-sm text-slate-300">{row.why}</span>
                               </td>
                             </tr>
-                          ) : null}
+                          )}
                         </Fragment>
                       );
                     })}
