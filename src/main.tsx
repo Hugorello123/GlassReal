@@ -19,8 +19,6 @@ import PredictionsPage from "./pages/PredictionsPage";
 import StatsPage from "./pages/StatsPage";
 import TutorPage from "./pages/TutorPage";
 import VoiceAvatar from "./components/VoiceAvatar";
-import GossipFloater from "./components/GossipFloater";
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <HashRouter>
@@ -44,7 +42,6 @@ createRoot(document.getElementById("root")!).render(
         <Route path="*" element={<Landing />} />
       </Routes>
       <VoiceAvatar />
-      <GossipFloater />
     </HashRouter>
   </StrictMode>,
 );
