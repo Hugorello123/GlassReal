@@ -1,42 +1,61 @@
-import { Link } from "react-router";
-const TrialPayment = () => {
-  return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-10 space-y-6">
-      <h1 className="text-2xl font-bold">Start Your Trial</h1>
-      <p className="text-gray-400 text-center max-w-md">
-        Get full access to Sentotrade for 24 hours for just $3.
-        Experience real-time whale alerts, market intelligence, and AI-powered insights.
-      </p>
+// src/trial-payment.tsx
+import { useMemo } from "react";
+import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 
-      <div className="bg-white/10 p-6 rounded-xl w-full max-w-sm space-y-4">
-        <div className="flex justify-between items-center">
-          <span className="text-gray-300">Sentotrade Trial</span>
-          <span className="text-xl font-bold">$3.00</span>
-        </div>
-        <div className="border-t border-white/20 pt-4">
-          <ul className="text-sm text-gray-300 space-y-2">
-            <li>✓ 24 hours full access</li>
-            <li>✓ Whale Alerts + AI Insights</li>
-            <li>✓ Telegram Alerts</li>
-            <li>✓ Real-time market data</li>
-          </ul>
-        </div>
-      </div>
+export default function TrialPayment() {
+  const ENV_CLIENT = import.meta.env.VITE_PAYPAL_CLIENT_ID; // prefer .env
+  const FALLBACK_CLIENT = "BAAyFWZflc-gfx-YK9UCINUYA-VKsWSlHg9YFSpv2uevrvQwxrg8xLqfU_BZz_UJ8tfI2xBoe7NvvMY8EU";
+  const clientId = ENV_CLIENT || FALLBACK_CLIENT;
 
-      <a
-        href="https://www.paypal.com/paypalme/yourlink"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-block bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-8 rounded-lg transition-colors"
-      >
-        Pay with PayPal →
-      </a>
-
-      <Link to="/onboarding" className="text-sm text-cyan-400 hover:text-cyan-300">
-        I've paid — Continue to Onboarding →
-      </Link>
-    </div>
+  const paypalOptions = useMemo(
+    () => ({
+      clientId,
+      components: "buttons",
+      currency: "USD",
+      disableFunding: "venmo",
+      intent: "capture",
+    }),
+    [clientId]
   );
-};
 
-export default TrialPayment;
+  const amount = "3.00";
+  const currency = "USD";
+
+  return (
+    <PayPalScriptProvider options={paypalOptions}>
+      <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-10 space-y-6">
+        <h1 className="text-2xl font-bold text-center">Start Your 24-Hour Trial</h1>
+        <p className="text-gray-400 text-center max-w-md">
+          $3 one-time — Secure PayPal checkout below.
+        </p>
+
+        <div style={{ maxWidth: 340, width: "100%" }}>
+          <PayPalButtons
+            style={{ layout: "vertical" }}
+            forceReRender={[amount, currency, clientId]}
+            createOrder={(_, actions) =>
+              actions.order!.create({
+                purchase_units: [{ description: "24-Hour Trial", amount: { value: amount, currency_code: currency } }],
+                intent: "CAPTURE",
+              })
+            }
+            onApprove={(_, actions) =>
+              actions.order!.capture().then((details) => {
+                alert(`Transaction completed by ${details.payer?.name?.given_name || "user"}`);
+                window.location.href = "/onboarding";
+              })
+            }
+            onError={(err) => {
+              console.error("PayPal error:", err);
+              alert("PayPal couldn't complete the checkout. Please try again.");
+            }}
+          />
+        </div>
+
+        <a href="/onboarding" className="mt-6 text-cyan-400 underline hover:text-cyan-200">
+          I've paid — Continue to Onboarding →
+        </a>
+      </div>
+    </PayPalScriptProvider>
+  );
+}

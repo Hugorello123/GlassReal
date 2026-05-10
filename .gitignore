@@ -2,5 +2,7 @@ node_modules/
 dist/
 dist.tar.gz
 .env
+.env.local
+.env.*.local
 *.log
 .DS_Store

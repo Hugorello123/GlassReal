@@ -10,6 +10,7 @@
     "start": "node server.mjs"
   },
   "dependencies": {
+    "@paypal/react-paypal-js": "^9.2.0",
     "dotenv": "^17.4.2",
     "express": "^4.21.2",
     "node-fetch": "^3.3.2",
