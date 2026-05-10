@@ -746,8 +746,21 @@ async function runSignalEngine() {
     console.log("[Signals] Throttled — each asset already has a prediction within", Math.round(SIGNAL_ASSET_COOLDOWN_MS / 60000), "min");
   }
   const newestFirst = readAllPredictionsMerged().sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")));
+
+  /** OpenTestGate: skip if an open test for the same normalised asset+call already exists. */
+  const openTests = new Set(
+    newestFirst
+      .filter(p => String(p.status || "").toLowerCase() === "open")
+      .map(p => assetCooldownKey(p.asset) + "|" + String(p.call || "").toLowerCase())
+  );
+
   const signals = [];
   for (const s of throttled) {
+    const openKey = assetCooldownKey(s.asset) + "|" + String(s.call || "").toLowerCase();
+    if (openTests.has(openKey)) {
+      console.log(`[OpenTestGate] SKIP ${s.asset} ${s.call} — open test already exists`);
+      continue;
+    }
     if (!(await checkTrendFilter(s.asset, s.call))) continue;
     if (!checkCooldownGate(s.asset, s.call, newestFirst)) continue;
     signals.push(s);
