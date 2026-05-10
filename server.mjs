@@ -336,7 +336,7 @@ async function checkTrendFilter(asset, call) {
   }
 }
 
-/** Consecutive misses gate for exact asset + call at the head of prediction history. */
+/** Consecutive misses gate for exact asset + call across full history (not just head). */
 function checkCooldownGate(asset, call, newestFirst) {
   try {
     const targetAsset = assetCooldownKey(asset);
@@ -346,7 +346,7 @@ function checkCooldownGate(asset, call, newestFirst) {
     for (const p of newestFirst) {
       const pAsset = assetCooldownKey(p.asset);
       const pCall = String(p.call || "").toLowerCase() === "short" ? "short" : "long";
-      if (pAsset !== targetAsset || pCall !== targetCall) break;
+      if (pAsset !== targetAsset || pCall !== targetCall) continue;
       const st = String(p.status || "").toLowerCase();
       if (st === "missed") {
         losses++;
@@ -355,7 +355,7 @@ function checkCooldownGate(asset, call, newestFirst) {
         }
         continue;
       }
-      if (st === "hit") break;
+      // Same asset+call but not missed (hit, partial, open) — streak ends here
       break;
     }
     if (losses >= COOLDOWN_LOSS_STREAK && lastMissTs) {
