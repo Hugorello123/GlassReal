@@ -18,6 +18,39 @@ const hasSSL = fs.existsSync(SSL_KEY) && fs.existsSync(SSL_CERT);
 
 console.log("[Sentotrade] PORT:", PORT, "SSL:", hasSSL);
 
+/* ─── Telegram alerts ─── */
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const TELEGRAM_CHAT_ID   = process.env.TELEGRAM_CHAT_ID   || "";
+
+function formatAlert(p) {
+  const lines = [
+    "🧪 <b>SentoTrade Live Edge Test</b>",
+    "",
+    `Asset: ${p.asset}`,
+    `Call: ${String(p.call || "").toUpperCase()}`,
+    `Window: ${p.windowHours || "?"}h`,
+    `Entry: ${p.entry ?? "?"}`,
+    `Target: ${p.target ?? "?"}`,
+  ];
+  if (p.why) lines.push(`Why: ${p.why}`);
+  lines.push("", "<i>Not financial advice. Simulated test only.</i>");
+  return lines.join("\n");
+}
+
+async function sendTelegramAlert(message) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message, parse_mode: "HTML" }),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (err) {
+    console.error("[Telegram] send error:", err.message);
+  }
+}
+
 /* ─── stats accumulator ─── */
 const STATS_FILE = path.join(__dirname, "stats.jsonl");
 function logStat(cat, data) {
@@ -441,6 +474,9 @@ function savePredictions(preds) {
   for (const p of preds) {
     fs.appendFileSync(PREDICTIONS_FILE, JSON.stringify(p) + "\n");
     logStat("prediction", { id: p.id, asset: p.asset, call: p.call, status: p.status });
+    if (String(p.status || "").toLowerCase() === "open") {
+      sendTelegramAlert(formatAlert(p)).catch(e => console.error("[Telegram]", e.message));
+    }
   }
 }
 
