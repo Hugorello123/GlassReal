@@ -122,31 +122,32 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {pulse?.spywords && pulse.spywords.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {pulse.spywords.slice(0, 6).map((word, i) => (
-                <span key={i} className="text-xs px-2 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">{word}</span>
-              ))}
-            </div>
-          )}
+          {/* min-h reserves layout space before data loads — prevents scroll jump */}
+          <div className="flex flex-wrap gap-2 mb-3 min-h-[2rem]">
+            {pulse?.spywords?.slice(0, 6).map((word, i) => (
+              <span key={i} className="text-xs px-2 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">{word}</span>
+            ))}
+          </div>
 
-          {topTheme && topTheme.heat > 0 && (
-            <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-lg bg-orange-500/10 border border-orange-500/20">
-              <span className="text-sm">🔥</span>
-              <div className="text-sm">
-                <span className="text-orange-400 font-semibold">Dominant Theme: {topTheme.name}</span>
-                <span className="text-slate-400 mx-2">•</span>
-                <span className="text-xs text-slate-400">{topTheme.category.replace(/-/g, " ")}</span>
-                {topTheme.impacts.length > 0 && (
-                  <span className="text-xs text-slate-500 ml-2">
-                    {topTheme.impacts.slice(0, 3).map((imp, idx) => (
-                      <span key={idx} className="ml-1">{imp.asset} {imp.direction}</span>
-                    ))}
-                  </span>
-                )}
+          <div className="mb-3 min-h-[2.5rem]">
+            {topTheme && topTheme.heat > 0 && (
+              <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                <span className="text-sm">🔥</span>
+                <div className="text-sm">
+                  <span className="text-orange-400 font-semibold">Dominant Theme: {topTheme.name}</span>
+                  <span className="text-slate-400 mx-2">•</span>
+                  <span className="text-xs text-slate-400">{topTheme.category.replace(/-/g, " ")}</span>
+                  {topTheme.impacts.length > 0 && (
+                    <span className="text-xs text-slate-500 ml-2">
+                      {topTheme.impacts.slice(0, 3).map((imp, idx) => (
+                        <span key={idx} className="ml-1">{imp.asset} {imp.direction}</span>
+                      ))}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="rounded-xl border border-slate-700/50 bg-black/30 p-4 mb-4">
             {pulse?.alerts && pulse.alerts.length > 0 ? (
