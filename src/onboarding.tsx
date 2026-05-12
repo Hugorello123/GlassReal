@@ -1,31 +1,31 @@
 // src/onboarding.tsx
 import { useState } from "react";
+import { useNavigate } from "react-router";
 
 export default function Onboarding() {
   const [email, setEmail] = useState("");
   const [telegram, setTelegram] = useState("");
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
-    "idle"
-  );
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [message, setMessage] = useState("");
+  const navigate = useNavigate();
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     try {
       setStatus("saving");
-      // Local capture for now (safe even without backend):
+      const plan = localStorage.getItem("userPlan") || "";
       if (email) localStorage.setItem("userEmail", email);
       if (telegram) localStorage.setItem("userTelegram", telegram);
 
-      // OPTIONAL backend call (enable later when endpoint is ready):
-      // await fetch("/api/onboarding", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({ email, telegram }),
-      // });
+      await fetch("/api/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, telegram, plan }),
+      });
 
       setStatus("saved");
-      setMessage("Saved. You can close this page or go to the dashboard.");
+      setMessage("Saved! Redirecting to dashboard…");
+      setTimeout(() => navigate("/dashboard"), 1500);
     } catch (err) {
       console.error(err);
       setStatus("error");
@@ -93,10 +93,7 @@ export default function Onboarding() {
         </form>
 
         <div className="mt-10 text-sm text-white/60">
-          <p>
-            Later, this page will also ping our backend (
-            <code>/api/onboarding</code>) and our Telegram bot to confirm.
-          </p>
+          <p>Your details are saved securely. Alerts will be sent to your Telegram handle.</p>
         </div>
       </div>
     </main>

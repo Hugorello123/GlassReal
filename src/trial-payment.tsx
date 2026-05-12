@@ -41,8 +41,9 @@ export default function TrialPayment() {
             }
             onApprove={(_, actions) =>
               actions.order!.capture().then((details) => {
+                localStorage.setItem("userPlan", "trial");
                 alert(`Transaction completed by ${details.payer?.name?.given_name || "user"}`);
-                window.location.href = "/onboarding";
+                window.location.href = "/#/onboarding";
               })
             }
             onError={(err) => {

@@ -252,7 +252,8 @@ async function fetchIndicesCombined() {
 }
 
 /* ─── auto-prediction engine ─── */
-const PREDICTIONS_FILE = path.join(__dirname, "predictions.jsonl");
+const PREDICTIONS_FILE  = path.join(__dirname, "predictions.jsonl");
+const ONBOARDING_FILE   = path.join(__dirname, "onboarding.jsonl");
 
 async function fetchPrices() {
   try {
@@ -879,6 +880,33 @@ function handleRequest(req, res) {
   if (pathOnly.startsWith("/api/flow/btc") || pathOnly.startsWith("/api/flow/eth")) return res.writeHead(200, {"Content-Type": "application/json"}).end(JSON.stringify({ status: "connect_bitquery", to_exch: { count: 0, usd: 0 }, from_exch: { count: 0, usd: 0 } }));
   if (pathOnly.startsWith("/api/stable/usdt-eth")) return res.writeHead(200, {"Content-Type": "application/json"}).end(JSON.stringify({ status: "connect_etherscan", mints: { count: 0, usd: 0 }, burns: { count: 0, usd: 0 } }));
   if (pathOnly === "/api/watchdog/summary") return res.writeHead(200, {"Content-Type": "application/json"}).end("[]");
+
+  if (pathOnly === "/api/onboarding" && req.method === "POST") {
+    let body = "";
+    req.on("data", chunk => body += chunk);
+    req.on("end", () => {
+      try {
+        const { email, telegram, plan } = JSON.parse(body);
+        const ip = String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim();
+        const record = {
+          time: new Date().toISOString(),
+          email:    String(email    || "").slice(0, 200),
+          telegram: String(telegram || "").replace(/^@/, "").slice(0, 100),
+          plan:     String(plan     || "").slice(0, 50),
+          ip,
+        };
+        fs.appendFileSync(ONBOARDING_FILE, JSON.stringify(record) + "\n");
+        logStat("onboarding", { email: record.email, telegram: record.telegram, plan: record.plan });
+        sendTelegramAlert(
+          `🎉 <b>New Onboarding</b>\n\nPlan: ${record.plan || "?"}\nEmail: ${record.email || "?"}\nTelegram: @${record.telegram || "?"}`
+        ).catch(() => {});
+        res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: true }));
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Invalid JSON" }));
+      }
+    });
+    return;
+  }
 
   if (pathOnly === "/api/stats/log" && req.method === "POST") {
     let body = "";

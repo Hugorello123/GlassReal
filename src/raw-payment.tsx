@@ -6,7 +6,7 @@ const RawPayment = () => {
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-10 space-y-6">
       <h1 className="text-2xl font-bold">Subscribe to RAW Premium</h1>
       <p className="text-gray-400 text-center max-w-md">
-        You’ll be redirected to PayPal to complete your $79/month subscription.
+        You'll be redirected to PayPal to complete your $79/month subscription.
         After payment, click the button below to continue onboarding.
       </p>
 
@@ -30,9 +30,10 @@ const RawPayment = () => {
 
       <Link
         to="/onboarding"
+        onClick={() => localStorage.setItem("userPlan", "raw")}
         className="mt-6 text-cyan-400 underline hover:text-cyan-200"
       >
-        I’ve paid — Continue to Onboarding →
+        I've paid — Continue to Onboarding →
       </Link>
     </div>
   );
