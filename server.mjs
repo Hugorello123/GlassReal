@@ -958,7 +958,17 @@ function handleRequest(req, res) {
   if (!fs.existsSync(filePath) && !path.extname(filePath)) { const h = filePath + ".html"; if (fs.existsSync(h)) filePath = h; }
   if (!fs.existsSync(filePath)) filePath = path.join(staticDir, "index.html");
   const ext = path.extname(filePath).toLowerCase();
-  fs.readFile(filePath, (err, c) => { if (err) { res.writeHead(404, {"Content-Type": "text/plain"}); return res.end("Not found"); } res.writeHead(200, {"Content-Type": mime[ext] || "application/octet-stream" }); res.end(c); });
+  fs.readFile(filePath, (err, c) => {
+    if (err) { res.writeHead(404, {"Content-Type": "text/plain"}); return res.end("Not found"); }
+    // Hashed assets (/assets/*.js, /assets/*.css) are safe to cache forever.
+    // index.html and other entry points must revalidate on every request.
+    const isHashed = pathOnly.startsWith("/assets/");
+    const cacheControl = isHashed
+      ? "public, max-age=31536000, immutable"
+      : "no-cache, must-revalidate";
+    res.writeHead(200, { "Content-Type": mime[ext] || "application/octet-stream", "Cache-Control": cacheControl });
+    res.end(c);
+  });
 }
 
 /* ─── start server ─── */
