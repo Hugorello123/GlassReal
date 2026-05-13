@@ -36,18 +36,29 @@ const Section: React.FC<{ heading: string; children: React.ReactNode }> = ({ hea
 export default function EquitiesCommoditiesPanel() {
   return (
     <div className="space-y-6">
+      <Section heading="AI / Semiconductors">
+        <TV symbol="NASDAQ:NVDA"  title="NVDA — Nvidia" />
+        <TV symbol="NASDAQ:AVGO"  title="AVGO — Broadcom" />
+        <TV symbol="NYSE:TSM"     title="TSM — Taiwan Semi" />
+        <TV symbol="NASDAQ:MU"    title="MU — Micron" />
+        <TV symbol="NASDAQ:INTC"  title="INTC — Intel" />
+        <TV symbol="NASDAQ:SMCI"  title="SMCI — Super Micro" />
+        <TV symbol="NASDAQ:PANW"  title="PANW — Palo Alto" />
+        <TV symbol="NASDAQ:SOUN"  title="SOUN — SoundHound AI" />
+      </Section>
+
       <Section heading="Equities">
-        <TV symbol="NASDAQ:AAPL" title="AAPL" />
-        <TV symbol="NASDAQ:MSFT" title="MSFT" />
-        <TV symbol="NASDAQ:NVDA" title="NVDA" />
-        <TV symbol="NASDAQ:TSLA" title="TSLA" />
+        <TV symbol="NASDAQ:GOOGL" title="GOOGL — Alphabet" />
+        <TV symbol="NASDAQ:TSLA"  title="TSLA — Tesla" />
+        <TV symbol="NASDAQ:AAPL"  title="AAPL — Apple" />
+        <TV symbol="NASDAQ:MSFT"  title="MSFT — Microsoft" />
       </Section>
 
       <Section heading="Commodities">
         <TV symbol="FOREXCOM:XAUUSD" title="Gold (XAUUSD)" />
-        <TV symbol="TVC:USOIL" title="WTI Crude" />
-        <TV symbol="TVC:UKOIL" title="Brent" />
-        <TV symbol="COMEX:HG1!" title="Copper (HG1!)" />
+        <TV symbol="TVC:USOIL"       title="WTI Crude" />
+        <TV symbol="TVC:UKOIL"       title="Brent" />
+        <TV symbol="COMEX:HG1!"      title="Copper (HG1!)" />
       </Section>
     </div>
   );
