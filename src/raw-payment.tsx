@@ -3,7 +3,7 @@ import { Link } from "react-router";
 
 const RawPayment = () => {
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-10 space-y-6">
+    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center px-4 py-10 space-y-6">
       <h1 className="text-2xl font-bold">Subscribe to RAW Premium</h1>
       <p className="text-gray-400 text-center max-w-md">
         You'll be redirected to PayPal to complete your $79/month subscription.

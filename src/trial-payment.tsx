@@ -23,7 +23,7 @@ export default function TrialPayment() {
 
   return (
     <PayPalScriptProvider options={paypalOptions}>
-      <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-10 space-y-6">
+      <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center px-4 py-10 space-y-6">
         <h1 className="text-2xl font-bold text-center">Start Your 24-Hour Trial</h1>
         <p className="text-gray-400 text-center max-w-md">
           $3 one-time — Secure PayPal checkout below.

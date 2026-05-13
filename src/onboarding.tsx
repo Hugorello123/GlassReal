@@ -49,7 +49,7 @@ export default function Onboarding() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.currentTarget.value)}
-              className="w-full rounded-md px-3 py-2 bg-white/5 border border-white/10 outline-none"
+              className="w-full rounded-md px-3 py-3 bg-white/5 border border-white/10 outline-none text-base"
               placeholder="you@example.com"
               autoComplete="email"
             />
@@ -65,7 +65,7 @@ export default function Onboarding() {
                 type="text"
                 value={telegram}
                 onChange={(e) => setTelegram(e.currentTarget.value.replace(/^@/, ""))}
-                className="flex-1 rounded-md px-3 py-2 bg-white/5 border border-white/10 outline-none"
+                className="flex-1 rounded-md px-3 py-3 bg-white/5 border border-white/10 outline-none text-base"
                 placeholder="yourhandle"
                 required
               />
@@ -75,7 +75,7 @@ export default function Onboarding() {
           <button
             type="submit"
             disabled={status === "saving"}
-            className="inline-flex items-center gap-2 rounded-md px-4 py-2 bg-cyan-500/90 hover:bg-cyan-400/90 disabled:opacity-60"
+            className="w-full justify-center inline-flex items-center gap-2 rounded-md px-4 py-3 text-base bg-cyan-500/90 hover:bg-cyan-400/90 disabled:opacity-60"
           >
             {status === "saving" ? "Saving…" : "Save"}
           </button>

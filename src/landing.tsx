@@ -6,7 +6,7 @@ const Landing = () => {
     <main className="min-h-screen bg-gradient-to-br from-black to-gray-900 text-white flex flex-col items-center justify-center px-4 py-12">
 
       {/* Hero */}
-      <h1 className="text-5xl font-bold mb-3 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-600">
+      <h1 className="text-3xl sm:text-5xl font-bold mb-3 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-600">
         SentoTrade
       </h1>
       <p className="text-gray-400 text-base mb-10 text-center max-w-md">
@@ -35,7 +35,7 @@ const Landing = () => {
         </div>
 
         {/* TRIAL Card — highlighted */}
-        <div className="relative bg-cyan-950/60 border-2 border-cyan-500/60 p-6 rounded-2xl shadow-xl flex flex-col scale-[1.03]">
+        <div className="relative bg-cyan-950/60 border-2 border-cyan-500/60 p-6 rounded-2xl shadow-xl flex flex-col md:scale-[1.03]">
           <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-cyan-500 text-black text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">
             Most Popular
           </span>
