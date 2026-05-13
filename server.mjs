@@ -62,6 +62,67 @@ function logStat(cat, data) {
 let newsCache = { articles: [{ title: "Loading...", url: "#" }], ts: 0 };
 const NEWS_CACHE_MS = 180000; // 3 minutes
 
+/** Reddit / community sources must not drive the main market radar (no Reddit RSS in this server path). */
+function isExcludedNewsUrl(url) {
+  const u = String(url || "").toLowerCase();
+  return u.includes("reddit.com") || u.includes("redd.it");
+}
+
+const NEWS_Q_MACRO = encodeURIComponent(
+  "market OR markets OR stocks OR stock OR shares OR trader OR trading OR crypto OR bitcoin OR ethereum OR oil OR gold OR fed OR inflation OR earnings OR rates OR dollar OR yields OR tariff OR tariffs OR cpi OR sanctions OR revenue OR profit OR semiconductor OR wall street OR nasdaq OR s&p"
+);
+const NEWS_Q_NAMES = encodeURIComponent(
+  "nvidia OR tesla OR apple OR microsoft OR google OR alphabet OR broadcom OR tsm OR micron OR intel OR palo alto OR super micro OR bitcoin OR btc OR eth OR ai stocks OR chip stocks"
+);
+
+function escapeReToken(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Single-token allow: word-ish boundaries (ASCII) so "eth" does not match "whether". */
+function headlineHasToken(hayNorm, token) {
+  const t = escapeReToken(token);
+  return new RegExp(`(?:^|[^a-z0-9])${t}(?:$|[^a-z0-9])`, "i").test(hayNorm);
+}
+
+/** Multi-word phrases (already lowercased, spaces collapsed). */
+function headlineHasPhrase(hayNorm, phrase) {
+  const inner = phrase.split(/\s+/).map(escapeReToken).join("\\s+");
+  return new RegExp(`(?:^|[^a-z0-9])${inner}(?:$|[^a-z0-9])`, "i").test(hayNorm);
+}
+
+const MARKET_ALLOW_PHRASES = ["palo alto", "super micro", "ai stocks", "chip stocks", "wall street"];
+const MARKET_ALLOW_WORDS = [
+  "market", "markets", "stock", "stocks", "shares", "trader", "traders", "trading", "crypto", "bitcoin", "btc",
+  "ethereum", "eth", "oil", "gold", "fed", "inflation", "cpi", "rates", "dollar", "yields", "earnings", "revenue",
+  "profit", "tariff", "tariffs", "sanctions", "semiconductor", "nvidia", "tesla", "apple", "microsoft", "google",
+  "alphabet", "broadcom", "tsm", "micron", "intel", "nasdaq", "spy", "ai",
+];
+
+const MARKET_BLOCK_WORDS = [
+  "celebrity", "movie", "tv", "netflix", "wwe", "sports", "crime", "murder", "dating", "gossip", "reality",
+  "actor", "actress", "music", "song", "anime", "disney", "trailer",
+];
+
+/** Block obvious non-market noise; \b avoids clipping GameStop for "game". */
+const MARKET_BLOCK_GAME_RE = /\bgame\b/i;
+
+function isMarketRelevantHeadline(title) {
+  const hay = String(title || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (!hay) return false;
+  for (const w of MARKET_BLOCK_WORDS) {
+    if (headlineHasToken(hay, w)) return false;
+  }
+  if (MARKET_BLOCK_GAME_RE.test(hay)) return false;
+  for (const ph of MARKET_ALLOW_PHRASES) {
+    if (headlineHasPhrase(hay, ph)) return true;
+  }
+  for (const w of MARKET_ALLOW_WORDS) {
+    if (headlineHasToken(hay, w)) return true;
+  }
+  return false;
+}
+
 function dedupeArticlesByTitle(rows) {
   const seen = new Set();
   const out = [];
@@ -81,27 +142,41 @@ async function fetchNewsWithCache() {
     return newsCache.articles;
   }
   let articles = [];
+  let anyHttpOk = false;
+  let rawMergedCount = 0;
   try {
-    const q1 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=war%20OR%20ceasefire%20OR%20sanctions%20OR%20conflict%20OR%20peace%20OR%20geopolitical&language=en&size=10`;
-    const q2 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=oil%20OR%20fed%20OR%20inflation%20OR%20rates%20OR%20tariff%20OR%20macro&language=en&size=10`;
+    const q1 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${NEWS_Q_MACRO}&language=en&size=14`;
+    const q2 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${NEWS_Q_NAMES}&language=en&size=14`;
     const [r1, r2] = await Promise.all([
       fetch(q1, { signal: AbortSignal.timeout(5000) }),
       fetch(q2, { signal: AbortSignal.timeout(5000) }),
     ]);
     const rows = [];
     for (const r of [r1, r2]) {
+      if (r.ok) anyHttpOk = true;
       if (!r.ok) continue;
       const d = await r.json();
       if (d?.results?.length) rows.push(...d.results.map(a => ({ title: a.title, url: a.link })));
     }
-    articles = dedupeArticlesByTitle(rows).slice(0, 20);
-    console.log("[News] Fresh fetch:", articles.length, "articles (merged)");
+    const merged = dedupeArticlesByTitle(rows).filter((a) => !isExcludedNewsUrl(a.url));
+    rawMergedCount = merged.length;
+    articles = merged.filter((a) => isMarketRelevantHeadline(a.title)).slice(0, 20);
+    console.log("[News] Fresh fetch:", rawMergedCount, "merged →", articles.length, "after relevance filter");
   } catch (e) {
     console.log("[News] Fetch error:", e.message);
   }
-  if (!articles.length) articles = [{ title: "News temporarily unavailable", url: "#" }];
+  if (!articles.length) {
+    articles = [
+      {
+        title: anyHttpOk
+          ? "No high-quality market headlines passed the relevance filter right now."
+          : "News temporarily unavailable",
+        url: "#",
+      },
+    ];
+  }
   newsCache = { articles, ts: now };
-  logStat("news", { count: articles.length, cached: false });
+  logStat("news", { count: articles.length, cached: false, rawMerged: rawMergedCount });
   return articles;
 }
 
@@ -109,7 +184,12 @@ const GOSSIP_KEYWORDS = ["gold", "oil", "btc", "bitcoin", "tesla", "fed", "tarif
 
 function gossipIsPlaceholderArticle(a) {
   const t = String(a?.title || "").toLowerCase();
-  return !t || t === "loading..." || t.includes("news temporarily unavailable");
+  return (
+    !t ||
+    t === "loading..." ||
+    t.includes("news temporarily unavailable") ||
+    t.includes("no high-quality market headlines passed the relevance filter")
+  );
 }
 
 function gossipTitleMatchesKeyword(title) {
@@ -532,10 +612,11 @@ function predictionRecordFromMerged() {
   return { hit, missed, partial, open };
 }
 
-/* ─── Guru briefing MVP (local / fallback only — no LLM) ─── */
+/* ─── Guru briefing MVP: local fallback + optional Claude Haiku (ANTHROPIC_API_KEY); no tier quota here yet ─── */
 const BRIEFING_ALLOWED_ASSETS = ["BTC", "ETH", "GOLD", "OIL", "TSLA", "NVDA", "INTC", "GOOGL", "TSM", "AVGO", "MU", "SMCI", "PANW", "SOUN"];
 const BRIEFING_TIMEFRAMES = new Set(["1h-4h", "4h-1d", "1d-5d", "1w", "12h", "24h", "session"]);
 const BRIEFING_MODES = new Set(["momentum_check", "sentiment_read", "risk_check"]);
+const BRIEFING_REQUIRED_DISCLAIMER = "Educational market briefing only. Not financial advice.";
 
 function normalizeBriefingAssetInput(raw) {
   const x = String(raw || "").trim().toUpperCase();
@@ -607,7 +688,7 @@ function headlineMentionsAsset(title, assetNorm) {
 
 async function buildLocalBriefing(assetNorm, timeframe, mode) {
   const ts = new Date().toISOString();
-  const disclaimer = "Educational market briefing only. Not financial advice.";
+  const disclaimer = BRIEFING_REQUIRED_DISCLAIMER;
   const prices = (await fetchPrices().catch(() => null)) || {};
   const articles = await fetchNewsWithCache().catch(() => []);
   const gossip = gossipPayloadFromArticles(articles);
@@ -724,6 +805,140 @@ async function buildLocalBriefing(assetNorm, timeframe, mode) {
     disclaimer,
     timestamp: ts,
   };
+}
+
+/* Claude Haiku (Messages API) — only when ANTHROPIC_API_KEY is set; no per-tier gate in this step */
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const CLAUDE_BRIEFING_MODEL = process.env.CLAUDE_BRIEFING_MODEL || "claude-3-5-haiku-20241022";
+const CLAUDE_BRIEFING_TIMEOUT_MS = Number.isFinite(Number(process.env.CLAUDE_BRIEFING_TIMEOUT_MS))
+  ? Math.min(20000, Math.max(4000, Number(process.env.CLAUDE_BRIEFING_TIMEOUT_MS)))
+  : 9500;
+
+function extractJsonObjectFromModelText(text) {
+  const s = String(text || "").trim();
+  if (!s) return null;
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const inner = fence ? fence[1].trim() : s;
+  const start = inner.indexOf("{");
+  const end = inner.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  try {
+    return JSON.parse(inner.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+function validateHaikuBriefingOverlay(parsed, assetNorm, timeframe, mode, localBriefing) {
+  if (!parsed || typeof parsed !== "object") return null;
+  if (String(parsed.asset || "").trim().toUpperCase() !== assetNorm) return null;
+  if (String(parsed.timeframe || "").trim() !== timeframe) return null;
+  if (String(parsed.mode || "").trim() !== mode) return null;
+
+  const clip = (x, max) => String(x ?? "").trim().slice(0, max);
+  const arrOfStr = (x, maxItems, maxEach) => {
+    if (!Array.isArray(x)) return null;
+    const out = [];
+    for (const item of x.slice(0, maxItems)) {
+      const line = clip(item, maxEach);
+      if (line) out.push(line);
+    }
+    return out.length ? out : null;
+  };
+
+  const conf = Math.round(Number(parsed.confidence));
+  const confidence = Number.isFinite(conf) ? Math.min(100, Math.max(0, conf)) : localBriefing.confidence;
+
+  const reasonChain = arrOfStr(parsed.reasonChain, 12, 420) || localBriefing.reasonChain;
+  const riskWarnings = arrOfStr(parsed.riskWarnings, 10, 420) || localBriefing.riskWarnings;
+
+  const marketState = clip(parsed.marketState, 240) || localBriefing.marketState;
+  const bias = clip(parsed.bias, 96) || localBriefing.bias;
+  const observationWindow = clip(parsed.observationWindow, 64) || localBriefing.observationWindow;
+  const invalidationLevel = clip(parsed.invalidationLevel, 480) || localBriefing.invalidationLevel;
+  const plainEnglishSummary = clip(parsed.plainEnglishSummary, 1200) || localBriefing.plainEnglishSummary;
+
+  return {
+    asset: assetNorm,
+    timeframe,
+    mode,
+    marketState,
+    bias,
+    confidence,
+    reasonChain,
+    riskWarnings,
+    observationWindow,
+    invalidationLevel,
+    plainEnglishSummary,
+    disclaimer: BRIEFING_REQUIRED_DISCLAIMER,
+    timestamp: localBriefing.timestamp,
+  };
+}
+
+async function tryClaudeHaikuBriefing(localBriefing, assetNorm, timeframe, mode) {
+  if (!ANTHROPIC_API_KEY) return null;
+
+  const system = [
+    "You are SentoTrade Guru briefing writer.",
+    "Output a single JSON object only (no markdown outside the JSON). No prose before or after.",
+    "Educational market-readiness briefing only: observational language, risk awareness, invalidation framing.",
+    "Never instruct the user to buy, sell, hold, size positions, or enter trades. No price targets as recommendations.",
+    "You are given a draft briefing built from live feed facts. Refine clarity and structure; do not contradict stated numbers or feed facts.",
+    "Required JSON keys: asset, timeframe, mode, marketState, bias, confidence (integer 0-100), reasonChain (array of strings), riskWarnings (array of strings), observationWindow, invalidationLevel, plainEnglishSummary, disclaimer.",
+    `The disclaimer string must be exactly: ${JSON.stringify(BRIEFING_REQUIRED_DISCLAIMER)}`,
+  ].join(" ");
+
+  const userPayload = JSON.stringify({
+    asset: assetNorm,
+    timeframe,
+    mode,
+    localDraft: localBriefing,
+  });
+
+  const body = JSON.stringify({
+    model: CLAUDE_BRIEFING_MODEL,
+    max_tokens: 2048,
+    temperature: 0.35,
+    system,
+    messages: [{ role: "user", content: userPayload }],
+  });
+
+  let res;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body,
+      signal: AbortSignal.timeout(CLAUDE_BRIEFING_TIMEOUT_MS),
+    });
+  } catch (e) {
+    console.log("[GuruBriefing] Haiku request error:", e && e.message);
+    return null;
+  }
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    console.log("[GuruBriefing] Haiku HTTP", res.status, errText.slice(0, 200));
+    return null;
+  }
+
+  let json;
+  try {
+    json = await res.json();
+  } catch {
+    return null;
+  }
+
+  const textBlock = json?.content?.find((c) => c && c.type === "text");
+  const rawText = textBlock?.text ?? "";
+  const parsed = extractJsonObjectFromModelText(rawText);
+  const out = validateHaikuBriefingOverlay(parsed, assetNorm, timeframe, mode, localBriefing);
+  if (!out) console.log("[GuruBriefing] Haiku parse/validate failed, using local");
+  return out;
 }
 
 /** Atomic replace: only touches PREDICTIONS_FILE in this app directory (safe alongside other apps). */
@@ -1114,7 +1329,16 @@ function handleRequest(req, res) {
           res.writeHead(400).end(JSON.stringify({ error: "unsupported_mode", allowed: [...BRIEFING_MODES] }));
           return;
         }
-        const briefing = await buildLocalBriefing(assetIn, timeframe, mode);
+        const localBriefing = await buildLocalBriefing(assetIn, timeframe, mode);
+        let briefing = localBriefing;
+        let briefingSource = "local";
+        if (ANTHROPIC_API_KEY) {
+          const ai = await tryClaudeHaikuBriefing(localBriefing, assetIn, timeframe, mode);
+          if (ai) {
+            briefing = ai;
+            briefingSource = "claude_haiku";
+          }
+        }
         const logLine = {
           time: briefing.timestamp,
           asset: assetIn,
@@ -1123,6 +1347,7 @@ function handleRequest(req, res) {
           bias: briefing.bias,
           confidence: briefing.confidence,
           marketState: String(briefing.marketState || "").slice(0, 240),
+          source: briefingSource,
         };
         fs.appendFileSync(GURU_BRIEFINGS_FILE, JSON.stringify(logLine) + "\n");
         res.writeHead(200).end(JSON.stringify({ briefing }));

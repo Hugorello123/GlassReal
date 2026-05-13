@@ -55,21 +55,29 @@ const Landing = () => {
           </Link>
         </div>
 
-        {/* RAW Card */}
-        <div className="bg-white/5 border border-green-500/30 p-6 rounded-2xl shadow-md flex flex-col">
-          <h2 className="text-xl font-bold mb-1 text-green-300">RAW</h2>
-          <p className="mb-4 text-sm text-gray-400">$79 / month</p>
+        {/* RAW Card — Founder Access waitlist (not full checkout until premium tier is ready) */}
+        <div className="relative bg-white/5 border border-green-500/30 p-6 rounded-2xl shadow-md flex flex-col">
+          <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-500/90 text-black text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide whitespace-nowrap">
+            Launching in 14 days
+          </span>
+          <h2 className="text-xl font-bold mb-1 text-green-300 pt-2">RAW — Founder Access</h2>
+          <p className="mb-2 text-sm text-gray-200 font-medium">$79 / month</p>
+          <p className="mb-4 text-xs text-gray-400 leading-relaxed">
+            For serious users who want ongoing access, priority alerting, and higher Guru AI briefing limits.
+          </p>
+          <p className="mb-3 text-xs text-amber-200/90">Want early access? Contact us.</p>
           <ul className="text-sm text-gray-300 mb-6 space-y-2 flex-1">
             <li>✓ Everything in Trial</li>
-            <li>✓ Trader Desk access</li>
-            <li>✓ Full intelligence dashboard</li>
-            <li>✓ Priority alert pipeline</li>
+            <li>✓ Ongoing full radar access</li>
+            <li>✓ Priority Telegram alert pipeline</li>
+            <li>✓ Higher Guru AI briefing limits — coming soon</li>
+            <li>✓ Founder access before public rollout</li>
           </ul>
           <Link
-            to="/raw-payment"
-            className="inline-block text-center bg-green-700 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition"
+            to="/onboarding?plan=raw-waitlist"
+            className="inline-block text-center bg-green-700/90 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition border border-green-500/40"
           >
-            Subscribe RAW
+            Join RAW Waitlist
           </Link>
         </div>
       </div>
