@@ -49,6 +49,7 @@ export default function VoiceAvatar() {
   }, [location.pathname]);
 
   if (!synth) return null;
+  if (page === "/" || page === "") return null;
 
   return (
     <button
