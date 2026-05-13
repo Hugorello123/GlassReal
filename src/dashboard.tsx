@@ -99,7 +99,7 @@ export default function Dashboard() {
   return (
     <>
       <NavBar current="dashboard" />
-      <main className="min-h-screen bg-gradient-to-br from-black to-gray-900 text-white p-6">
+      <main className="min-h-screen bg-gradient-to-br from-black to-gray-900 text-white p-6" style={{ overflowAnchor: "none" }}>
         <h1 className="text-4xl font-bold mb-6 text-center bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-green-500">
           Sentotrade Dashboard
         </h1>

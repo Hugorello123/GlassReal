@@ -28,7 +28,7 @@ function formatAlert(p) {
     "",
     `Asset: ${p.asset}`,
     `Call: ${String(p.call || "").toUpperCase()}`,
-    `Window: ${p.windowHours || "?"}h`,
+    `Window: ${p.timeframe || p.windowHours || "?"}`,
     `Entry: ${p.entry ?? "?"}`,
     `Target: ${p.target ?? "?"}`,
   ];
@@ -263,11 +263,31 @@ async function fetchPrices() {
       { key: "spx", ticker: "^GSPC" }, { key: "oil", ticker: "CL=F" },
       { key: "gold", ticker: "GC=F" }, { key: "silver", ticker: "SI=F" }
     ];
+    // CoinGecko (free, may rate-limit server IPs) with Binance fallback
     const cg = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true", { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => ({}));
+    let btcUsd = cg?.bitcoin?.usd ?? null;
+    let btcCh  = cg?.bitcoin?.usd_24h_change ?? null;
+    let ethUsd = cg?.ethereum?.usd ?? null;
+    let ethCh  = cg?.ethereum?.usd_24h_change ?? null;
+    // Binance fallback when CoinGecko is rate-limited
+    if (btcUsd === null || ethUsd === null) {
+      const [bnBtc, bnEth] = await Promise.allSettled([
+        fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT", { signal: AbortSignal.timeout(5000) }).then(r => r.json()),
+        fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT", { signal: AbortSignal.timeout(5000) }).then(r => r.json()),
+      ]);
+      if (btcUsd === null && bnBtc.status === "fulfilled") {
+        btcUsd = Number(bnBtc.value?.lastPrice) || null;
+        btcCh  = Number(bnBtc.value?.priceChangePercent) || null;
+      }
+      if (ethUsd === null && bnEth.status === "fulfilled") {
+        ethUsd = Number(bnEth.value?.lastPrice) || null;
+        ethCh  = Number(bnEth.value?.priceChangePercent) || null;
+      }
+    }
     const yahoo = await Promise.allSettled(yahooMap.map(t => fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${t.ticker}?interval=1d&range=5d`, { signal: AbortSignal.timeout(5000) }).then(r => r.json()).then(j => ({ key: t.key, meta: j?.chart?.result?.[0]?.meta || {} }))));
     const prices = {
-      btc: cg?.bitcoin?.usd ?? null, btcCh: cg?.bitcoin?.usd_24h_change ?? null,
-      eth: cg?.ethereum?.usd ?? null, ethCh: cg?.ethereum?.usd_24h_change ?? null
+      btc: btcUsd, btcCh,
+      eth: ethUsd, ethCh,
     };
     for (const r of yahoo) {
       if (r.status === "fulfilled") {

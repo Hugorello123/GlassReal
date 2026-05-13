@@ -9,8 +9,9 @@ export default function BitcoinBox() {
     async function load() {
       try {
         const res = await fetch('/api/prices');
-        const data = await res.json();
-        const btc = data?.BTC || data?.['BTC-USD'];
+        const raw = await res.json();
+        const data = raw?.prices || raw;
+        const btc = data?.btc;
         if (btc && alive) {
           setPrice('$' + Number(btc).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
         } else if (alive) {
