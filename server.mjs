@@ -254,6 +254,7 @@ async function fetchIndicesCombined() {
 /* ─── auto-prediction engine ─── */
 const PREDICTIONS_FILE  = path.join(__dirname, "predictions.jsonl");
 const ONBOARDING_FILE   = path.join(__dirname, "onboarding.jsonl");
+const GURU_BRIEFINGS_FILE = path.join(__dirname, "guru_briefings.jsonl");
 
 async function fetchPrices() {
   try {
@@ -529,6 +530,200 @@ function predictionRecordFromMerged() {
     else open++;
   }
   return { hit, missed, partial, open };
+}
+
+/* ─── Guru briefing MVP (local / fallback only — no LLM) ─── */
+const BRIEFING_ALLOWED_ASSETS = ["BTC", "ETH", "GOLD", "OIL", "TSLA", "NVDA", "INTC", "GOOGL", "TSM", "AVGO", "MU", "SMCI", "PANW", "SOUN"];
+const BRIEFING_TIMEFRAMES = new Set(["1h-4h", "4h-1d", "1d-5d", "1w", "12h", "24h", "session"]);
+const BRIEFING_MODES = new Set(["momentum_check", "sentiment_read", "risk_check"]);
+
+function normalizeBriefingAssetInput(raw) {
+  const x = String(raw || "").trim().toUpperCase();
+  if (x === "XAU" || x === "XAUUSD") return "GOLD";
+  if (x === "WTI" || x === "CRUDE") return "OIL";
+  if (x === "GOOG") return "GOOGL";
+  return x;
+}
+
+/** Map briefing asset to live price fields from fetchPrices() — no invented numbers. */
+function briefingPriceFromPrices(assetNorm, prices) {
+  if (!prices || typeof prices !== "object") {
+    return { ok: false, price: null, changePct: null, note: "Price feed unavailable." };
+  }
+  const row = (pk, ck) => {
+    const price = prices[pk] != null && Number.isFinite(Number(prices[pk])) ? Number(prices[pk]) : null;
+    const ch = prices[ck] != null && Number.isFinite(Number(prices[ck])) ? Number(prices[ck]) : null;
+    if (price == null && ch == null) {
+      return { ok: false, price: null, changePct: null, note: "Price data unavailable for this symbol on the current feed." };
+    }
+    const chNote =
+      ch != null
+        ? `Recent reference move ≈ ${ch >= 0 ? "+" : ""}${ch.toFixed(2)}% (feed-dependent; not a trade signal).`
+        : "Level observed on feed; percentage change not available.";
+    return { ok: true, price, changePct: ch, note: chNote };
+  };
+  switch (assetNorm) {
+    case "BTC":
+      return row("btc", "btcCh");
+    case "ETH":
+      return row("eth", "ethCh");
+    case "GOLD":
+      return row("gold", "goldCh");
+    case "OIL":
+      return row("oil", "oilCh");
+    case "TSLA":
+      return row("tsla", "tslaCh");
+    case "NVDA":
+      return row("nvda", "nvdaCh");
+    case "INTC":
+      return row("intc", "intcCh");
+    default:
+      return { ok: false, price: null, changePct: null, note: "Price data unavailable for this symbol on the current feed." };
+  }
+}
+
+function headlineMentionsAsset(title, assetNorm) {
+  const t = String(title || "").toLowerCase();
+  const map = {
+    BTC: ["bitcoin", "btc"],
+    ETH: ["ethereum", "eth "],
+    GOLD: ["gold", "xau"],
+    OIL: ["oil", "wti", "crude", "brent"],
+    TSLA: ["tesla", "tsla"],
+    NVDA: ["nvidia", "nvda"],
+    INTC: ["intel", "intc"],
+    GOOGL: ["alphabet", "google", "googl"],
+    TSM: ["tsmc", "taiwan semi", "tsm"],
+    AVGO: ["broadcom", "avgo"],
+    MU: ["micron", " mu"],
+    SMCI: ["super micro", "smci"],
+    PANW: ["palo alto", "panw"],
+    SOUN: ["soundhound", "soun"],
+  };
+  const keys = map[assetNorm];
+  if (!keys) return false;
+  return keys.some((k) => t.includes(k));
+}
+
+async function buildLocalBriefing(assetNorm, timeframe, mode) {
+  const ts = new Date().toISOString();
+  const disclaimer = "Educational market briefing only. Not financial advice.";
+  const prices = (await fetchPrices().catch(() => null)) || {};
+  const articles = await fetchNewsWithCache().catch(() => []);
+  const gossip = gossipPayloadFromArticles(articles);
+  const preds = readAllPredictionsMerged();
+  const px = briefingPriceFromPrices(assetNorm, prices);
+  const assetLabel = assetNorm === "GOLD" ? "Gold" : assetNorm;
+
+  const ak = assetCooldownKey(assetLabel);
+  const openForAsset = preds.filter(
+    (p) => String(p.status || "").toLowerCase() === "open" && assetCooldownKey(p.asset) === ak
+  );
+  const recentAny = preds
+    .filter((p) => assetCooldownKey(p.asset) === ak)
+    .sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")))
+    .slice(0, 5);
+
+  const hl = (articles || []).find((a) => headlineMentionsAsset(a.title, assetNorm));
+  const reasonChain = [];
+  if (px.ok && px.price != null) {
+    reasonChain.push(`${assetLabel} last price on feed: ${px.price.toLocaleString("en-US", { maximumFractionDigits: 2 })} USD.`);
+  } else {
+    reasonChain.push(`${assetLabel}: ${px.note}`);
+  }
+  reasonChain.push(`Market Pulse intensity (headline keyword scan): ${gossip.intensity ?? 0}/10.`);
+  if (gossip.spywords && gossip.spywords.length) {
+    reasonChain.push(`Top related keywords in headlines: ${gossip.spywords.slice(0, 5).join(", ")}.`);
+  }
+  if (openForAsset.length) {
+    reasonChain.push(`There ${openForAsset.length === 1 ? "is" : "are"} ${openForAsset.length} open Live Edge Test(s) for this asset bucket — review the test record, not as a recommendation.`);
+  } else {
+    reasonChain.push("No open Live Edge Test for this asset bucket right now.");
+  }
+  if (hl?.title) {
+    reasonChain.push(`Recent headline touchpoint: ${String(hl.title).slice(0, 140)}${String(hl.title).length > 140 ? "…" : ""}`);
+  }
+
+  let bias = "neutral";
+  let confidence = 52;
+  const ch = px.changePct;
+  if (mode === "momentum_check") {
+    if (px.ok && ch != null) {
+      if (ch <= -1.2) {
+        bias = "watchful-to-stabilization";
+        confidence = 58;
+      } else if (ch >= 1.2) {
+        bias = "watchful-to-extension";
+        confidence = 58;
+      }
+    }
+  } else if (mode === "sentiment_read") {
+    const inten = Number(gossip.intensity) || 0;
+    if (inten >= 6) {
+      bias = "headline-heat-elevated";
+      confidence = 62;
+    } else if (inten <= 2) {
+      bias = "headline-heat-quiet";
+      confidence = 48;
+    }
+  } else if (mode === "risk_check") {
+    bias = "risk-awareness";
+    confidence = 55;
+    if (openForAsset.length) confidence = Math.min(72, confidence + openForAsset.length * 4);
+    if (px.ok && ch != null && Math.abs(ch) >= 2.5) confidence = Math.min(75, confidence + 6);
+  }
+
+  const riskWarnings = [
+    "This is an observational briefing only — not an instruction to trade, size, or time entries.",
+    "Feeds can lag or disagree; cross-check levels on your own tools if you act privately.",
+  ];
+  if ((Number(gossip.intensity) || 0) >= 5) {
+    riskWarnings.push("Headline heat is elevated — event risk can move unrelated markets.");
+  }
+  if (!px.ok) {
+    riskWarnings.push("Price context is incomplete — do not infer levels from this briefing alone.");
+  }
+
+  let marketState = "";
+  if (!px.ok) {
+    marketState = `${assetLabel}: ${px.note} Use other data (tests, headlines) as context only.`;
+  } else if (ch == null) {
+    marketState = `${assetLabel} is visible on the feed near ${px.price?.toLocaleString("en-US", { maximumFractionDigits: 2 })}; change % not available for this snapshot.`;
+  } else {
+    marketState = `${assetLabel} snapshot: last ≈ ${px.price?.toLocaleString("en-US", { maximumFractionDigits: 2 })} with a recent reference move of about ${ch >= 0 ? "+" : ""}${ch.toFixed(2)}%.`;
+  }
+  if (mode === "sentiment_read") {
+    marketState += ` Sentiment read: headline-scan intensity ${gossip.intensity ?? 0}/10.`;
+  }
+  if (mode === "risk_check") {
+    marketState += ` Risk check: ${openForAsset.length} open test(s) in this bucket; ${recentAny.filter((p) => String(p.status).toLowerCase() === "missed").length} recent row(s) show as missed in the last few lines — informational only.`;
+  }
+
+  const invalidationLevel =
+    "Invalidate this read if a major headline shock or a sharp move in BTC (for macro-correlated names) contradicts the tone above within your chosen observation window.";
+
+  const plainEnglishSummary =
+    `Worth watching? ${assetLabel} is framed here as a monitoring question only. ` +
+    (px.ok
+      ? `Price data is present on the server feed; combine with your own discipline and the ${timeframe} window you selected.`
+      : `Price data is missing on the current feed for this symbol — treat the rest as context, not as a trigger.`) +
+    ` Modes are labels for how we weighted headlines vs price vs tests — not a performance promise.`;
+
+  return {
+    asset: assetNorm,
+    timeframe,
+    mode,
+    marketState,
+    bias,
+    confidence,
+    reasonChain,
+    riskWarnings,
+    observationWindow: timeframe,
+    invalidationLevel,
+    plainEnglishSummary,
+    disclaimer,
+    timestamp: ts,
+  };
 }
 
 /** Atomic replace: only touches PREDICTIONS_FILE in this app directory (safe alongside other apps). */
@@ -894,6 +1089,47 @@ function handleRequest(req, res) {
       .catch(() =>
         res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ intensity: 0, spywords: [], alerts: [], headlines: [] }))
       );
+    return;
+  }
+
+  if (pathOnly === "/api/guru/briefing" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", async () => {
+      res.setHeader("Content-Type", "application/json");
+      try {
+        const parsed = JSON.parse(body || "{}");
+        const assetIn = normalizeBriefingAssetInput(parsed.asset);
+        const timeframe = String(parsed.timeframe || "").trim();
+        const mode = String(parsed.mode || "").trim();
+        if (!BRIEFING_ALLOWED_ASSETS.includes(assetIn)) {
+          res.writeHead(400).end(JSON.stringify({ error: "unsupported_asset", allowed: BRIEFING_ALLOWED_ASSETS }));
+          return;
+        }
+        if (!BRIEFING_TIMEFRAMES.has(timeframe)) {
+          res.writeHead(400).end(JSON.stringify({ error: "unsupported_timeframe", allowed: [...BRIEFING_TIMEFRAMES] }));
+          return;
+        }
+        if (!BRIEFING_MODES.has(mode)) {
+          res.writeHead(400).end(JSON.stringify({ error: "unsupported_mode", allowed: [...BRIEFING_MODES] }));
+          return;
+        }
+        const briefing = await buildLocalBriefing(assetIn, timeframe, mode);
+        const logLine = {
+          time: briefing.timestamp,
+          asset: assetIn,
+          timeframe,
+          mode,
+          bias: briefing.bias,
+          confidence: briefing.confidence,
+          marketState: String(briefing.marketState || "").slice(0, 240),
+        };
+        fs.appendFileSync(GURU_BRIEFINGS_FILE, JSON.stringify(logLine) + "\n");
+        res.writeHead(200).end(JSON.stringify({ briefing }));
+      } catch {
+        res.writeHead(400).end(JSON.stringify({ error: "invalid_json" }));
+      }
+    });
     return;
   }
 

@@ -24,6 +24,57 @@ interface WhaleAlert {
   usd: number;
 }
 
+/** POST /api/guru/briefing — matches server.mjs Step 15a (local / no-LLM briefing). */
+interface GuruBriefingPayload {
+  asset: string;
+  timeframe: string;
+  mode: string;
+  marketState: string;
+  bias: string;
+  confidence: number;
+  reasonChain: string[];
+  riskWarnings: string[];
+  observationWindow: string;
+  invalidationLevel: string;
+  plainEnglishSummary: string;
+  disclaimer: string;
+  timestamp: string;
+}
+
+const BRIEFING_ASSETS: { value: string; label: string }[] = [
+  { value: "BTC", label: "BTC" },
+  { value: "ETH", label: "ETH" },
+  { value: "GOLD", label: "Gold" },
+  { value: "OIL", label: "Oil" },
+  { value: "TSLA", label: "TSLA" },
+  { value: "NVDA", label: "NVDA" },
+  { value: "GOOGL", label: "GOOGL" },
+  { value: "TSM", label: "TSM" },
+  { value: "AVGO", label: "AVGO" },
+  { value: "MU", label: "MU" },
+  { value: "INTC", label: "INTC" },
+  { value: "SMCI", label: "SMCI" },
+  { value: "PANW", label: "PANW" },
+  { value: "SOUN", label: "SOUN" },
+];
+
+/** Values must match server BRIEFING_TIMEFRAMES (server.mjs). */
+const BRIEFING_TIMEFRAMES: { value: string; label: string }[] = [
+  { value: "1h-4h", label: "1h–4h" },
+  { value: "4h-1d", label: "4h–1d (≈ day session)" },
+  { value: "1d-5d", label: "1d–5d (multi-day)" },
+  { value: "12h", label: "12h" },
+  { value: "24h", label: "24h" },
+  { value: "1w", label: "1 week" },
+  { value: "session", label: "Session" },
+];
+
+const BRIEFING_MODES: { value: string; label: string }[] = [
+  { value: "momentum_check", label: "Momentum Check" },
+  { value: "sentiment_read", label: "Sentiment Read" },
+  { value: "risk_check", label: "Risk Check" },
+];
+
 /* ─── live price fetch ─── */
 async function fetchLivePrices(): Promise<MarketPrice[]> {
   try {
@@ -96,6 +147,47 @@ export default function GuruPage() {
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState("—");
 
+  const [bfAsset, setBfAsset] = useState("BTC");
+  const [bfTimeframe, setBfTimeframe] = useState("1h-4h");
+  const [bfMode, setBfMode] = useState("momentum_check");
+  const [bfLoading, setBfLoading] = useState(false);
+  const [bfError, setBfError] = useState<string | null>(null);
+  const [bfResult, setBfResult] = useState<GuruBriefingPayload | null>(null);
+
+  async function runBriefing() {
+    setBfLoading(true);
+    setBfError(null);
+    setBfResult(null);
+    try {
+      const res = await fetch("/api/guru/briefing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          asset: bfAsset,
+          timeframe: bfTimeframe,
+          mode: bfMode,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg =
+          typeof data.error === "string"
+            ? data.error
+            : data.error
+              ? JSON.stringify(data.error)
+              : `Request failed (${res.status})`;
+        setBfError(msg);
+        return;
+      }
+      if (data.briefing) setBfResult(data.briefing as GuruBriefingPayload);
+      else setBfError("Unexpected response shape");
+    } catch {
+      setBfError("Network error — try again.");
+    } finally {
+      setBfLoading(false);
+    }
+  }
+
   useEffect(() => {
     let alive = true;
 
@@ -137,6 +229,120 @@ export default function GuruPage() {
               Updated: {lastUpdate}
             </span>
           </div>
+
+          {/* Guru AI Briefing — market-readiness panel (not trade advice) */}
+          <section className="mb-8 rounded-2xl border border-cyan-500/25 bg-cyan-950/20 p-5 shadow-lg shadow-cyan-900/10">
+            <h2 className="text-lg font-semibold text-cyan-200 mb-1">Guru AI Briefing</h2>
+            <p className="text-xs text-gray-400 mb-4">
+              On-demand <span className="text-cyan-300/90">market briefing</span> from SentoTrade feeds (prices, headline scan, Live Edge Tests). Educational only — not financial advice.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Asset</label>
+                <select
+                  value={bfAsset}
+                  onChange={(e) => setBfAsset(e.target.value)}
+                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-cyan-500/40"
+                >
+                  {BRIEFING_ASSETS.map((a) => (
+                    <option key={a.value} value={a.value}>
+                      {a.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Timeframe</label>
+                <select
+                  value={bfTimeframe}
+                  onChange={(e) => setBfTimeframe(e.target.value)}
+                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-cyan-500/40"
+                >
+                  {BRIEFING_TIMEFRAMES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Mode</label>
+                <select
+                  value={bfMode}
+                  onChange={(e) => setBfMode(e.target.value)}
+                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-cyan-500/40"
+                >
+                  {BRIEFING_MODES.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void runBriefing()}
+              disabled={bfLoading}
+              className="w-full sm:w-auto rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 px-5 py-3 text-sm font-semibold text-black transition"
+            >
+              Ask Guru
+            </button>
+            {bfLoading && (
+              <p className="mt-4 text-sm text-cyan-200/90">Guru is reading the tape…</p>
+            )}
+            {bfError && (
+              <p className="mt-4 text-sm text-red-400 whitespace-pre-wrap break-words">{bfError}</p>
+            )}
+            {bfResult && !bfLoading && (
+              <div className="mt-5 rounded-xl border border-white/10 bg-black/35 p-4 space-y-3 text-sm">
+                <div>
+                  <span className="text-xs uppercase tracking-wide text-gray-500">Market state</span>
+                  <p className="text-gray-100 mt-1">{bfResult.marketState}</p>
+                </div>
+                <div className="flex flex-wrap gap-4">
+                  <div>
+                    <span className="text-xs uppercase tracking-wide text-gray-500">Bias</span>
+                    <p className="text-amber-200 font-medium mt-1">{bfResult.bias}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs uppercase tracking-wide text-gray-500">Confidence</span>
+                    <p className="text-gray-100 font-medium mt-1">{bfResult.confidence}%</p>
+                  </div>
+                  <div>
+                    <span className="text-xs uppercase tracking-wide text-gray-500">Observation window</span>
+                    <p className="text-gray-100 mt-1">{bfResult.observationWindow}</p>
+                  </div>
+                </div>
+                <div>
+                  <span className="text-xs uppercase tracking-wide text-gray-500">Reason chain</span>
+                  <ul className="mt-1 list-disc list-inside text-gray-300 space-y-1">
+                    {bfResult.reasonChain.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <span className="text-xs uppercase tracking-wide text-gray-500">Risk warnings</span>
+                  <ul className="mt-1 list-disc list-inside text-amber-100/90 space-y-1">
+                    {bfResult.riskWarnings.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <span className="text-xs uppercase tracking-wide text-gray-500">Invalidation</span>
+                  <p className="text-gray-300 mt-1">{bfResult.invalidationLevel}</p>
+                </div>
+                <div>
+                  <span className="text-xs uppercase tracking-wide text-gray-500">Plain summary</span>
+                  <p className="text-gray-200 mt-1 leading-relaxed">{bfResult.plainEnglishSummary}</p>
+                </div>
+                <p className="text-xs text-gray-500 pt-2 border-t border-white/10">{bfResult.disclaimer}</p>
+                <p className="text-[11px] text-gray-600">Generated: {bfResult.timestamp}</p>
+              </div>
+            )}
+          </section>
 
           {loading && (
             <div className="text-center text-gray-500 py-8">Loading live data…</div>
