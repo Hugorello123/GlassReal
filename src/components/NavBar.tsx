@@ -49,15 +49,13 @@ export default function NavBar({ current }: NavBarProps) {
           ))}
         </div>
 
-        {/* Mobile hamburger */}
+        {/* Mobile hamburger — visible cyan button */}
         <button
-          className="md:hidden flex flex-col gap-1.5 p-2 rounded-md text-gray-400 hover:text-white hover:bg-white/5 transition"
+          className="md:hidden flex items-center justify-center w-10 h-10 rounded-md bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xl hover:bg-cyan-500/30 transition"
           onClick={() => setOpen((o) => !o)}
           aria-label="Toggle menu"
         >
-          <span className={`block w-5 h-0.5 bg-current transition-transform ${open ? "rotate-45 translate-y-2" : ""}`} />
-          <span className={`block w-5 h-0.5 bg-current transition-opacity ${open ? "opacity-0" : ""}`} />
-          <span className={`block w-5 h-0.5 bg-current transition-transform ${open ? "-rotate-45 -translate-y-2" : ""}`} />
+          {open ? "✕" : "☰"}
         </button>
       </div>
 
