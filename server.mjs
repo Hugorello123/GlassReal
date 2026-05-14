@@ -69,10 +69,14 @@ function isExcludedNewsUrl(url) {
 }
 
 const NEWS_Q_MACRO = encodeURIComponent(
-  "market OR markets OR stocks OR stock OR shares OR trader OR trading OR crypto OR bitcoin OR ethereum OR oil OR gold OR fed OR inflation OR earnings OR rates OR dollar OR yields OR tariff OR tariffs OR cpi OR sanctions OR revenue OR profit OR semiconductor OR wall street OR nasdaq OR s&p"
+  "market OR markets OR stocks OR stock OR shares OR trader OR trading OR crypto OR bitcoin OR ethereum OR oil OR gold OR fed OR inflation OR earnings OR rates OR dollar OR yields OR tariff OR tariffs OR cpi OR sanctions OR revenue OR profit OR semiconductor OR semiconductors OR wall street OR nasdaq OR s&p OR export controls OR supply chain OR trade war OR rare earths OR Taiwan OR Boeing OR US China OR US-China OR china trade OR yuan OR renminbi OR delegation OR summit OR bessent OR chip export OR export ban"
 );
 const NEWS_Q_NAMES = encodeURIComponent(
-  "nvidia OR tesla OR apple OR microsoft OR google OR alphabet OR broadcom OR tsm OR micron OR intel OR palo alto OR super micro OR bitcoin OR btc OR eth OR ai stocks OR chip stocks"
+  "nvidia OR tesla OR apple OR microsoft OR google OR alphabet OR broadcom OR tsm OR micron OR intel OR palo alto OR super micro OR bitcoin OR btc OR eth OR ai stocks OR chip stocks OR SMCI OR AVGO OR MU OR INTC OR PANW OR SOUN"
+);
+/** US–China / trade / export-control lane (third NewsData pull). */
+const NEWS_Q_TRADE = encodeURIComponent(
+  "US China OR US-China OR USA China OR china trade OR trade tariffs OR tariff OR tariffs OR export controls OR export control OR rare earth OR rare earths OR Taiwan OR Boeing OR trade war OR trade talks OR trade truce OR semiconductor OR semiconductors OR tech stocks OR supply chain OR yuan OR renminbi OR delegation OR summit OR bessent OR Washington Beijing OR Beijing trade OR Trump China OR Trump tariff OR Trump trade OR chip controls OR export ban OR NVDA China OR TSMC"
 );
 
 function escapeReToken(s) {
@@ -91,12 +95,38 @@ function headlineHasPhrase(hayNorm, phrase) {
   return new RegExp(`(?:^|[^a-z0-9])${inner}(?:$|[^a-z0-9])`, "i").test(hayNorm);
 }
 
-const MARKET_ALLOW_PHRASES = ["palo alto", "super micro", "ai stocks", "chip stocks", "wall street"];
+const MARKET_ALLOW_PHRASES = [
+  "palo alto",
+  "super micro",
+  "ai stocks",
+  "chip stocks",
+  "wall street",
+  "us-china",
+  "u.s.-china",
+  "usa china",
+  "export controls",
+  "export control",
+  "rare earth",
+  "rare earths",
+  "trade war",
+  "trade talks",
+  "trade truce",
+  "chip controls",
+  "supply chain",
+  "xi jinping",
+  "trump china",
+  "trump tariff",
+  "trump trade",
+  "us china trade",
+  "export ban",
+  "chip export",
+];
 const MARKET_ALLOW_WORDS = [
   "market", "markets", "stock", "stocks", "shares", "trader", "traders", "trading", "crypto", "bitcoin", "btc",
   "ethereum", "eth", "oil", "gold", "fed", "inflation", "cpi", "rates", "dollar", "yields", "earnings", "revenue",
-  "profit", "tariff", "tariffs", "sanctions", "semiconductor", "nvidia", "tesla", "apple", "microsoft", "google",
+  "profit", "tariff", "tariffs", "sanctions", "semiconductor", "semiconductors", "nvidia", "tesla", "apple", "microsoft", "google",
   "alphabet", "broadcom", "tsm", "micron", "intel", "nasdaq", "spy", "ai",
+  "china", "beijing", "bessent", "boeing", "taiwan", "yuan", "renminbi", "delegation", "summit",
 ];
 
 const MARKET_BLOCK_WORDS = [
@@ -147,12 +177,14 @@ async function fetchNewsWithCache() {
   try {
     const q1 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${NEWS_Q_MACRO}&language=en&size=14`;
     const q2 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${NEWS_Q_NAMES}&language=en&size=14`;
-    const [r1, r2] = await Promise.all([
+    const q3 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${NEWS_Q_TRADE}&language=en&size=14`;
+    const [r1, r2, r3] = await Promise.all([
       fetch(q1, { signal: AbortSignal.timeout(5000) }),
       fetch(q2, { signal: AbortSignal.timeout(5000) }),
+      fetch(q3, { signal: AbortSignal.timeout(5000) }),
     ]);
     const rows = [];
-    for (const r of [r1, r2]) {
+    for (const r of [r1, r2, r3]) {
       if (r.ok) anyHttpOk = true;
       if (!r.ok) continue;
       const d = await r.json();
@@ -180,7 +212,26 @@ async function fetchNewsWithCache() {
   return articles;
 }
 
-const GOSSIP_KEYWORDS = ["gold", "oil", "btc", "bitcoin", "tesla", "fed", "tariff", "inflation", "rate", "spy"];
+const GOSSIP_KEYWORDS = [
+  "gold",
+  "oil",
+  "btc",
+  "bitcoin",
+  "tesla",
+  "fed",
+  "tariff",
+  "inflation",
+  "rate",
+  "spy",
+  "china",
+  "taiwan",
+  "boeing",
+  "export control",
+  "rare earth",
+  "trade war",
+  "semiconductor",
+  "yuan",
+];
 
 function gossipIsPlaceholderArticle(a) {
   const t = String(a?.title || "").toLowerCase();
