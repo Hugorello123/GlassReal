@@ -21,6 +21,85 @@ import GuruDrawer from "@/components/GuruDrawer";
 import NavBar from "@/components/NavBar";
 import { buildThemes, type WatchdogTheme } from "@/lib/watchdogThemes";
 
+/** Latest row from `/api/predictions` — FastGossip / ai-gossip-fast lane only. */
+interface FastPulsePred {
+  id?: string;
+  source?: string;
+  why?: string;
+  time?: string;
+  asset?: string;
+  call?: string;
+  timeframe?: string;
+  horizon?: string;
+}
+
+function isFastPulseRow(p: FastPulsePred): boolean {
+  if (String(p.source || "").toLowerCase() === "ai-gossip-fast") return true;
+  const id = String(p.id || "").toLowerCase();
+  if (id.startsWith("aigf_")) return true;
+  if (String(p.why || "").toLowerCase().includes("fast gossip")) return true;
+  return false;
+}
+
+/** Text after `Fast gossip (intensity N):` in `why`, else full why trimmed. */
+function parseFastGossipHeadline(why: string | undefined): string {
+  const w = String(why || "");
+  const m = w.match(/Fast gossip\s*\(\s*intensity\s*\d+\s*\)\s*:\s*(.*)/i);
+  const tail = (m?.[1] ?? "").trim();
+  return tail || w.trim();
+}
+
+function ageMinutesFromIso(iso: string | undefined): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  return (Date.now() - t) / 60000;
+}
+
+function formatRelativePulse(iso: string | undefined): string {
+  const mins = ageMinutesFromIso(iso);
+  if (mins == null || !Number.isFinite(mins)) return "recently";
+  if (mins < 1 / 60) return "just now";
+  if (mins < 1) return `${Math.max(1, Math.round(mins * 60))}s ago`;
+  if (mins < 60) return `${Math.round(mins)}m ago`;
+  const h = Math.floor(mins / 60);
+  const rm = Math.round(mins % 60);
+  if (h < 48) return rm > 0 ? `${h}h ${rm}m ago` : `${h}h ago`;
+  return `${Math.round(mins / 1440)}d ago`;
+}
+
+function useBreakingPulse() {
+  const [row, setRow] = useState<FastPulsePred | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      try {
+        const r = await fetch("/api/predictions?limit=30", { cache: "no-store" });
+        const d = await r.json();
+        const items: FastPulsePred[] = Array.isArray(d.items) ? d.items : [];
+        const hit = items.find(isFastPulseRow) ?? null;
+        if (alive) {
+          setRow(hit);
+          setLoaded(true);
+        }
+      } catch {
+        if (alive) {
+          setRow(null);
+          setLoaded(true);
+        }
+      }
+    }
+    void load();
+    const id = setInterval(load, 60000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+  return { row, loaded };
+}
+
 function useTopWatchdogTheme() {
   const [theme, setTheme] = useState<WatchdogTheme | null>(null);
   useEffect(() => {
@@ -88,6 +167,7 @@ export default function Dashboard() {
   useEffect(() => { window.scrollTo(0, 0); }, []);
   const [guruTopic, setGuruTopic] = useState<string | undefined>(undefined);
   const pulse = useMarketPulse();
+  const breaking = useBreakingPulse();
   const stats = usePredictionStats();
   const topTheme = useTopWatchdogTheme();
   const intensityCfg = pulse
@@ -106,6 +186,8 @@ export default function Dashboard() {
 
         {/* MARKET PULSE HERO */}
         <section className="w-full mb-8 rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-slate-900 to-black p-6 shadow-lg shadow-cyan-500/5">
+          <BreakingPulseStrip row={breaking.row} loaded={breaking.loaded} />
+
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
             <div className="flex items-start gap-3">
               <span className="text-2xl">🌐</span>
@@ -244,5 +326,55 @@ export default function Dashboard() {
         <GuruDrawer topic={guruTopic} onClose={() => setGuruTopic(undefined)} open={!!guruTopic} />
       </main>
     </>
+  );
+}
+
+function BreakingPulseStrip({ row, loaded }: { row: FastPulsePred | null; loaded: boolean }) {
+  const windowLabel = String(row?.timeframe || row?.horizon || "20m").trim() || "20m";
+  const callU = String(row?.call || "Long").toUpperCase();
+  const asset = String(row?.asset || "—").trim() || "—";
+  const rel = formatRelativePulse(row?.time);
+  const headline = parseFastGossipHeadline(row?.why);
+  const ageMin = ageMinutesFromIso(row?.time);
+  const isHot = row != null && ageMin != null && ageMin < 5;
+
+  if (!loaded) {
+    return (
+      <div className="mb-5 rounded-xl border border-slate-700/40 bg-black/25 px-4 py-3 min-h-[5.5rem]" aria-hidden>
+        <div className="h-3 w-40 bg-slate-700/50 rounded animate-pulse mb-2" />
+        <div className="h-3 w-full max-w-md bg-slate-700/30 rounded animate-pulse" />
+      </div>
+    );
+  }
+
+  if (!row) {
+    return (
+      <div className="mb-5 rounded-xl border border-slate-700/50 bg-black/30 px-4 py-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Breaking Pulse</div>
+        <p className="text-sm text-slate-400 mt-1">No breaking pulse right now — scanning headlines.</p>
+        <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+          Short-window gross market-move tests before spread, slippage, fees, and platform costs — not instructions.
+        </p>
+      </div>
+    );
+  }
+
+  const title = isHot ? "🔥 BREAKING PULSE" : "Recent Fast Pulse";
+  const border = isHot ? "border-orange-500/45 bg-orange-950/25" : "border-amber-500/35 bg-amber-950/15";
+
+  return (
+    <div className={`mb-5 rounded-xl border px-4 py-3 ${border}`}>
+      <div className={`text-xs font-bold uppercase tracking-wide ${isHot ? "text-orange-300" : "text-amber-200/90"}`}>{title}</div>
+      <p className="text-sm text-slate-100 mt-1.5 font-medium">
+        {asset} · {callU} · {windowLabel} window · {rel}
+      </p>
+      <p className="text-sm text-slate-300 mt-2 leading-snug">
+        <span className="text-slate-500">Fast headline heat → </span>
+        {headline ? <span>{headline}</span> : <span className="text-slate-500">short-window pressure logged.</span>}
+      </p>
+      <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+        Short-window gross market-move test before spread, slippage, fees, and platform costs — pressure radar, not a signal to act on.
+      </p>
+    </div>
   );
 }
