@@ -9,8 +9,8 @@ const Landing = () => {
       <h1 className="text-3xl sm:text-5xl font-bold mb-3 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-600">
         SentoTrade
       </h1>
-      <p className="text-gray-400 text-base mb-10 text-center max-w-md">
-        Market intelligence for independent traders.
+      <p className="text-gray-400 text-base mb-10 text-center max-w-lg px-2">
+        Market intelligence for independent traders — live market pressure, news themes, and prices across crypto (BTC, ETH, XRP, SOL), gold, forex, oil, AI stocks, and macro-sensitive markets.
       </p>
 
       {/* Pricing Cards */}
@@ -105,7 +105,7 @@ const Landing = () => {
           >
             <span className="text-2xl mb-2 group-hover:scale-110 transition">📊</span>
             <span className="font-semibold text-sm">Dashboard</span>
-            <span className="text-xs text-gray-500 mt-1">Market Pulse, live prices, intelligence feed</span>
+            <span className="text-xs text-gray-500 mt-1">Market Pulse, gold &amp; forex charts, live prices, intelligence feed</span>
           </Link>
 
           <Link

@@ -36,6 +36,33 @@ const Section: React.FC<{ heading: string; children: React.ReactNode }> = ({ hea
 export default function EquitiesCommoditiesPanel() {
   return (
     <div className="space-y-6">
+      <div className="rounded-2xl border border-white/10 p-4 mb-6">
+        <div className="text-sm font-semibold opacity-80 mb-1">Gold / Forex / Macro</div>
+        <p className="text-[11px] text-white/50 mb-3">
+          XAUUSD · USDZAR · EURUSD · GBPUSD · USDJPY · DXY — live charts via TradingView (Johannesburg time).
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          <TV symbol="OANDA:XAUUSD" title="Gold — XAUUSD" />
+          <TV symbol="OANDA:USDZAR" title="USD/ZAR" />
+          <TV symbol="FX:EURUSD" title="EUR/USD" />
+          <TV symbol="FX:GBPUSD" title="GBP/USD" />
+          <TV symbol="FX:USDJPY" title="USD/JPY" />
+          <TV symbol="TVC:DXY" title="DXY — US Dollar Index" />
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-cyan-500/20 p-4 mb-6 bg-cyan-950/10">
+        <div className="text-sm font-semibold text-cyan-200/90 mb-1">Crypto Majors</div>
+        <p className="text-[11px] text-white/50 mb-3">
+          BTC · ETH · XRP · SOL — live chart tiles for <span className="text-cyan-200/80">XRP</span> and{" "}
+          <span className="text-cyan-200/80">SOL</span> here; BTC and ETH are in the price blocks above. TradingView only — not SentoTrade signals.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <TV symbol="BINANCE:XRPUSDT" height={260} title="XRP — BINANCE:XRPUSDT" />
+          <TV symbol="BINANCE:SOLUSDT" height={260} title="SOL — BINANCE:SOLUSDT" />
+        </div>
+      </div>
+
       <Section heading="AI / Semiconductors">
         <TV symbol="NASDAQ:NVDA"  title="NVDA — Nvidia" />
         <TV symbol="NASDAQ:AVGO"  title="AVGO — Broadcom" />
@@ -55,10 +82,10 @@ export default function EquitiesCommoditiesPanel() {
       </Section>
 
       <Section heading="Commodities">
-        <TV symbol="FOREXCOM:XAUUSD" title="Gold (XAUUSD)" />
-        <TV symbol="TVC:USOIL"       title="WTI Crude" />
-        <TV symbol="TVC:UKOIL"       title="Brent" />
-        <TV symbol="COMEX:HG1!"      title="Copper (HG1!)" />
+        <TV symbol="COMEX:SI1!" title="Silver (COMEX)" />
+        <TV symbol="TVC:USOIL" title="WTI Crude" />
+        <TV symbol="TVC:UKOIL" title="Brent" />
+        <TV symbol="COMEX:HG1!" title="Copper (HG1!)" />
       </Section>
     </div>
   );

@@ -111,7 +111,7 @@ export default function Dashboard() {
               <span className="text-2xl">🌐</span>
               <div>
                 <h2 className="text-lg font-bold text-cyan-400 tracking-wide">MARKET PULSE</h2>
-                <p className="text-xs text-slate-400">Real-time sentiment pressure across crypto, equities, commodities and macro.</p>
+                <p className="text-xs text-slate-400">Real-time sentiment pressure across crypto, gold, forex, equities, commodities, and macro.</p>
               </div>
             </div>
             <div className="text-left md:text-right">
@@ -168,6 +168,8 @@ export default function Dashboard() {
           </div>
         </section>
 
+        <EquitiesCommoditiesPanel />
+
         {/* Top two big price blocks */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
           <EthPrice />
@@ -206,8 +208,6 @@ export default function Dashboard() {
           </div>
         </section>
 
-
-        <EquitiesCommoditiesPanel />
 
         {/* Market ticker + business ticker */}
         <section className="mt-10">
