@@ -24,7 +24,7 @@ interface WhaleAlert {
   usd: number;
 }
 
-/** POST /api/guru/briefing — matches server.mjs Step 15a (local / no-LLM briefing). */
+/** POST /api/guru/briefing — server applies plan + clientId daily quota (Step 18b). */
 interface GuruBriefingPayload {
   asset: string;
   timeframe: string;
@@ -74,6 +74,28 @@ const BRIEFING_MODES: { value: string; label: string }[] = [
   { value: "sentiment_read", label: "Sentiment Read" },
   { value: "risk_check", label: "Risk Check" },
 ];
+
+function getOrCreateBriefingClientId(): string {
+  try {
+    let cid = localStorage.getItem("st_cid")?.trim() ?? "";
+    if (/^cid_[a-z0-9_-]{4,120}$/i.test(cid)) return cid;
+    cid = `cid_${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 6)}`;
+    localStorage.setItem("st_cid", cid);
+    return cid;
+  } catch {
+    return `cid_${Date.now().toString(36)}`;
+  }
+}
+
+function getBriefingPlan(): string {
+  try {
+    const p = (localStorage.getItem("userPlan") || "free").trim().toLowerCase();
+    if (p === "trial" || p === "raw") return p;
+    return "free";
+  } catch {
+    return "free";
+  }
+}
 
 /* ─── live price fetch ─── */
 async function fetchLivePrices(): Promise<MarketPrice[]> {
@@ -166,16 +188,22 @@ export default function GuruPage() {
           asset: bfAsset,
           timeframe: bfTimeframe,
           mode: bfMode,
+          clientId: getOrCreateBriefingClientId(),
+          plan: getBriefingPlan(),
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const msg =
-          typeof data.error === "string"
-            ? data.error
-            : data.error
-              ? JSON.stringify(data.error)
-              : `Request failed (${res.status})`;
+          typeof data.message === "string" && data.message.trim()
+            ? data.message
+            : typeof data.error === "string"
+              ? data.error === "guru_daily_limit"
+                ? `Daily Guru limit reached (${String(data.limit ?? "?")} for ${String(data.plan ?? "free")} tier, UTC day).`
+                : data.error
+              : data.error
+                ? JSON.stringify(data.error)
+                : `Request failed (${res.status})`;
         setBfError(msg);
         return;
       }

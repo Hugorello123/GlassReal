@@ -335,6 +335,7 @@ async function fetchIndicesCombined() {
 const PREDICTIONS_FILE  = path.join(__dirname, "predictions.jsonl");
 const ONBOARDING_FILE   = path.join(__dirname, "onboarding.jsonl");
 const GURU_BRIEFINGS_FILE = path.join(__dirname, "guru_briefings.jsonl");
+const GURU_QUOTA_FILE = path.join(__dirname, "guru_quota.jsonl");
 
 async function fetchPrices() {
   try {
@@ -612,7 +613,7 @@ function predictionRecordFromMerged() {
   return { hit, missed, partial, open };
 }
 
-/* ─── Guru briefing MVP: local fallback + optional Claude Haiku (ANTHROPIC_API_KEY); no tier quota here yet ─── */
+/* ─── Guru briefing: plan + clientId quota (guru_quota.jsonl); Claude Haiku only for trial/raw when ANTHROPIC_API_KEY is set ─── */
 const BRIEFING_ALLOWED_ASSETS = ["BTC", "ETH", "GOLD", "OIL", "TSLA", "NVDA", "INTC", "GOOGL", "TSM", "AVGO", "MU", "SMCI", "PANW", "SOUN"];
 const BRIEFING_TIMEFRAMES = new Set(["1h-4h", "4h-1d", "1d-5d", "1w", "12h", "24h", "session"]);
 const BRIEFING_MODES = new Set(["momentum_check", "sentiment_read", "risk_check"]);
@@ -624,6 +625,55 @@ function normalizeBriefingAssetInput(raw) {
   if (x === "WTI" || x === "CRUDE") return "OIL";
   if (x === "GOOG") return "GOOGL";
   return x;
+}
+
+function guruQuotaDateUtc() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function normalizeBriefingPlan(raw) {
+  const p = String(raw || "").trim().toLowerCase();
+  if (p === "trial") return "trial";
+  if (p === "raw") return "raw";
+  return "free";
+}
+
+function guruBriefingDailyCap(plan) {
+  if (plan === "trial") return 5;
+  if (plan === "raw") return 10;
+  return 1;
+}
+
+function sanitizeBriefingClientId(raw) {
+  const s = String(raw || "").trim();
+  if (!s || s.length > 128) return "";
+  if (!/^cid_[a-z0-9_-]{4,120}$/i.test(s)) return "";
+  return s;
+}
+
+function countGuruBriefingsToday(clientId, ymd) {
+  if (!fs.existsSync(GURU_QUOTA_FILE)) return 0;
+  let text;
+  try {
+    text = fs.readFileSync(GURU_QUOTA_FILE, "utf8");
+  } catch {
+    return 0;
+  }
+  const lines = text.trim().split("\n").filter(Boolean);
+  let n = 0;
+  for (const line of lines) {
+    try {
+      const row = JSON.parse(line);
+      if (String(row.clientId || "") === clientId && String(row.date || "") === ymd) n++;
+    } catch {
+      /* skip bad line */
+    }
+  }
+  return n;
+}
+
+function appendGuruQuota(entry) {
+  fs.appendFileSync(GURU_QUOTA_FILE, JSON.stringify(entry) + "\n");
 }
 
 /** Map briefing asset to live price fields from fetchPrices() — no invented numbers. */
@@ -807,7 +857,7 @@ async function buildLocalBriefing(assetNorm, timeframe, mode) {
   };
 }
 
-/* Claude Haiku (Messages API) — only when ANTHROPIC_API_KEY is set; no per-tier gate in this step */
+/* Claude Haiku (Messages API) — only for trial/raw when ANTHROPIC_API_KEY is set; free always local */
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const CLAUDE_BRIEFING_MODEL = process.env.CLAUDE_BRIEFING_MODEL || "claude-3-5-haiku-20241022";
 const CLAUDE_BRIEFING_TIMEOUT_MS = Number.isFinite(Number(process.env.CLAUDE_BRIEFING_TIMEOUT_MS))
@@ -1329,16 +1379,50 @@ function handleRequest(req, res) {
           res.writeHead(400).end(JSON.stringify({ error: "unsupported_mode", allowed: [...BRIEFING_MODES] }));
           return;
         }
+        const clientId = sanitizeBriefingClientId(parsed.clientId);
+        if (!clientId) {
+          res.writeHead(400).end(
+            JSON.stringify({
+              error: "clientId_required",
+              message: "Missing or invalid clientId. Reload the page so the app can create one.",
+            })
+          );
+          return;
+        }
+        const plan = normalizeBriefingPlan(parsed.plan);
+        const cap = guruBriefingDailyCap(plan);
+        const quotaDate = guruQuotaDateUtc();
+        const used = countGuruBriefingsToday(clientId, quotaDate);
+        if (used >= cap) {
+          res.writeHead(429).end(
+            JSON.stringify({
+              error: "guru_daily_limit",
+              limit: cap,
+              plan,
+              message: `Daily Guru briefing limit reached (${cap} for ${plan} tier). Try again tomorrow (UTC).`,
+            })
+          );
+          return;
+        }
+
         const localBriefing = await buildLocalBriefing(assetIn, timeframe, mode);
         let briefing = localBriefing;
         let briefingSource = "local";
-        if (ANTHROPIC_API_KEY) {
+        const allowClaude = (plan === "trial" || plan === "raw") && !!ANTHROPIC_API_KEY;
+        if (allowClaude) {
           const ai = await tryClaudeHaikuBriefing(localBriefing, assetIn, timeframe, mode);
           if (ai) {
             briefing = ai;
             briefingSource = "claude_haiku";
           }
         }
+        appendGuruQuota({
+          t: new Date().toISOString(),
+          clientId,
+          plan,
+          date: quotaDate,
+          source: briefingSource,
+        });
         const logLine = {
           time: briefing.timestamp,
           asset: assetIn,
@@ -1348,6 +1432,8 @@ function handleRequest(req, res) {
           confidence: briefing.confidence,
           marketState: String(briefing.marketState || "").slice(0, 240),
           source: briefingSource,
+          clientId,
+          plan,
         };
         fs.appendFileSync(GURU_BRIEFINGS_FILE, JSON.stringify(logLine) + "\n");
         res.writeHead(200).end(JSON.stringify({ briefing }));
