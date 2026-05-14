@@ -233,6 +233,9 @@ export default function PredictionsPage() {
               </div>
             )}
           </div>
+          <p className="text-sm text-gray-400 mt-1 mb-6 max-w-2xl leading-relaxed">
+            Results are gross market-move tests before spread, slippage, fees, and platform costs.
+          </p>
 
           {/* ── AI Intelligence Track Record ── */}
           <section className="mb-8">

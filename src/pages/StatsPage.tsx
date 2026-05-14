@@ -178,6 +178,9 @@ export default function StatsPage() {
             </Link>
             . If the API fails, nothing below is guessed.
           </p>
+          <p className="text-sm text-gray-400 mt-3 max-w-2xl leading-relaxed">
+            Results are gross market-move tests before spread, slippage, fees, and platform costs.
+          </p>
         </div>
 
         {loading && <p className="text-gray-400 text-sm mb-6">Loading…</p>}
