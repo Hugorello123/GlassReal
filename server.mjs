@@ -390,7 +390,7 @@ const PRED_WINDOW_HOURS = 12;
 /** Asset-specific target/stop/window. Values are percentages + hours. */
 const ASSET_REGIMES = {
   Oil: { target: 0.8, stop: 0.6, windowHours: 12 },
-  Gold: { target: 0.8, stop: 0.6, windowHours: 12 },
+  Gold: { target: 0.4, stop: 0.6, windowHours: 12 },
   BTC: { target: 2.5, stop: 1.5, windowHours: 24 },
   ETH: { target: 2.5, stop: 1.5, windowHours: 24 },
   TSLA: { target: 1.2, stop: 0.8, windowHours: 4 },
@@ -538,7 +538,7 @@ function generateSignals(prices) {
   if (prices.eth != null && prices.ethCh !== null && prices.ethCh < -1.5) pushGuruSignal("ETH", "Long", prices.eth, `ETH oversold (${prices.ethCh.toFixed(2)}% 24h). Expect bounce.`, "eth_long");
   if (prices.eth != null && prices.ethCh !== null && prices.ethCh > 1.5) pushGuruSignal("ETH", "Short", prices.eth, `ETH overbought (+${prices.ethCh.toFixed(2)}% 24h). Expect pullback.`, "eth_short");
   if (prices.goldCh !== null && prices.goldCh > 0.5) pushGuruSignal("Gold", "Long", prices.gold, `Gold breaking (+${prices.goldCh.toFixed(2)}% 24h). Safe-haven flow.`, "gold_long");
-  if (prices.goldCh !== null && prices.goldCh < -0.5) pushGuruSignal("Gold", "Short", prices.gold, `Gold selling off (${prices.goldCh.toFixed(2)}% 24h). Risk-on tone.`, "gold_short");
+  if (prices.goldCh !== null && prices.goldCh < -1.0) pushGuruSignal("Gold", "Short", prices.gold, `Gold selling off (${prices.goldCh.toFixed(2)}% 24h). Risk-on tone.`, "gold_short");
   /* Oil / TSLA: session vs prior close from Yahoo (not CoinGecko 24h). Same target band as other guru signals. */
   if (prices.oil != null && prices.oilCh != null && prices.oilCh < -2) pushGuruSignal("Oil", "Long", prices.oil, `WTI weak (${prices.oilCh.toFixed(2)}% vs prior). Mean reversion watch.`, "oil_long");
   if (prices.oil != null && prices.oilCh != null && prices.oilCh > 2) pushGuruSignal("Oil", "Short", prices.oil, `WTI strong (+${prices.oilCh.toFixed(2)}% vs prior). Pullback watch.`, "oil_short");
