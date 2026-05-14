@@ -1,204 +1,275 @@
-import { useEffect, useState } from "react";
+// StatsPage — Live Edge Tests scorecard from /api/predictions only (no fabricated numbers).
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import NavBar from "@/components/NavBar";
 import { apiUrl } from "@/lib/sameOriginApi";
 
-interface StatsSummary {
-  total: number;
-  categories: { bias: number; prediction: number; news: number };
-  predictionRecord: { hit: number; missed: number; partial: number; open: number };
-  latestBias: { score?: number; label?: string; tape?: string } | null;
-  lastNewsCount: number;
+interface PredItem {
+  id?: string;
+  asset?: string;
+  status?: string;
 }
 
-interface ServerPrediction {
-  id: string;
-  time: string;
+interface PredRecord {
+  hit: number;
+  missed: number;
+  partial: number;
+  open: number;
+}
+
+type AssetAgg = {
   asset: string;
-  call: string;
-  entry: number;
-  target?: string;
-  targetPct?: string;
-  timeframe?: string;
-  status: string;
-  outcome?: string;
-  why?: string;
+  hit: number;
+  missed: number;
+  partial: number;
+  open: number;
+};
+
+function parseRecord(raw: unknown): PredRecord | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (
+    typeof r.hit === "number" &&
+    typeof r.missed === "number" &&
+    typeof r.partial === "number"
+  ) {
+    return {
+      hit: r.hit,
+      missed: r.missed,
+      partial: r.partial,
+      open: typeof r.open === "number" ? r.open : 0,
+    };
+  }
+  return null;
 }
 
-const MANUAL_KEY = "sentotrade_predictions";
+/** When `record` is missing, derive counts from the returned items (partial list — same logic shape as Predictions page). */
+function countsFromItems(items: PredItem[]): PredRecord {
+  let hit = 0;
+  let missed = 0;
+  let partial = 0;
+  let open = 0;
+  for (const r of items) {
+    const st = String(r.status ?? "").trim().toLowerCase();
+    if (st === "open") {
+      open++;
+      continue;
+    }
+    if (st === "void" || st === "") continue;
+    if (st === "hit") hit++;
+    else if (st === "missed") missed++;
+    else if (st === "partial") partial++;
+  }
+  return { hit, missed, partial, open };
+}
 
-function loadManual(): any[] {
-  try { return JSON.parse(localStorage.getItem(MANUAL_KEY) || "[]"); } catch { return []; }
+function aggregateByAsset(items: PredItem[]): AssetAgg[] {
+  const m = new Map<string, AssetAgg>();
+  for (const it of items) {
+    const asset = String(it.asset ?? "—").trim() || "—";
+    const st = String(it.status ?? "open").trim().toLowerCase();
+    if (!m.has(asset)) m.set(asset, { asset, hit: 0, missed: 0, partial: 0, open: 0 });
+    const row = m.get(asset)!;
+    if (st === "hit") row.hit++;
+    else if (st === "missed") row.missed++;
+    else if (st === "partial") row.partial++;
+    else if (st === "open") row.open++;
+  }
+  return [...m.values()].sort((a, b) => {
+    const ta = a.hit + a.missed + a.partial + a.open;
+    const tb = b.hit + b.missed + b.partial + b.open;
+    if (tb !== ta) return tb - ta;
+    return a.asset.localeCompare(b.asset);
+  });
+}
+
+function hitRateStrict(hit: number, missed: number, partial: number) {
+  const closed = hit + missed + partial;
+  if (closed <= 0) return null;
+  return Math.round((hit / closed) * 100);
+}
+
+function weightedRate(hit: number, missed: number, partial: number) {
+  const closed = hit + missed + partial;
+  if (closed <= 0) return null;
+  return Math.round(((hit + partial * 0.5) / closed) * 100);
 }
 
 export default function StatsPage() {
-  const [summary, setSummary] = useState<StatsSummary | null>(null);
-  const [serverPredictions, setServerPredictions] = useState<ServerPrediction[]>([]);
-  const [gossip, setGossip] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [unavailable, setUnavailable] = useState(false);
+  const [items, setItems] = useState<PredItem[]>([]);
+  const [recordFromApi, setRecordFromApi] = useState<PredRecord | null>(null);
 
   useEffect(() => {
     let alive = true;
     async function load() {
       try {
-        const [sRes, pRes, gRes] = await Promise.all([
-          fetch(apiUrl("/api/stats/summary")),
-          fetch(apiUrl("/api/predictions?limit=200")),
-          fetch(apiUrl("/api/gossip")).catch(() => null),
-        ]);
+        const res = await fetch(apiUrl("/api/predictions?limit=200"), {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
         if (!alive) return;
-
-        if (sRes.ok) setSummary(await sRes.json());
-        if (pRes.ok) {
-          const data = await pRes.json();
-          setServerPredictions(data.items || []);
+        if (!res.ok) {
+          setUnavailable(true);
+          setItems([]);
+          setRecordFromApi(null);
+          return;
         }
-        if (gRes && gRes.ok) setGossip(await gRes.json());
+        const ct = res.headers.get("content-type") || "";
+        if (!ct.includes("application/json")) {
+          setUnavailable(true);
+          setItems([]);
+          setRecordFromApi(null);
+          return;
+        }
+        const data = await res.json();
+        if (!alive) return;
+        const list = Array.isArray(data.items) ? (data.items as PredItem[]) : [];
+        setItems(list);
+        setRecordFromApi(parseRecord(data.record));
+        setUnavailable(false);
       } catch {
-        if (alive) setErr("Failed to load stats");
+        if (!alive) return;
+        setUnavailable(true);
+        setItems([]);
+        setRecordFromApi(null);
       } finally {
         if (alive) setLoading(false);
       }
     }
-    load();
-    const id = setInterval(load, 60000);
-    return () => { alive = false; clearInterval(id); };
+    void load();
+    const id = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 60_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
   }, []);
 
-  const manual = loadManual();
-  const manualScored = manual.filter((p: any) => p.status !== "open" && p.status !== "void");
-  const manualRate = manualScored.length > 0
-    ? Math.round(((manual.filter((p: any) => p.status === "hit").length + manual.filter((p: any) => p.status === "partial").length * 0.5) / manualScored.length) * 100)
-    : 0;
+  const displayRecord = useMemo(() => {
+    if (recordFromApi) return recordFromApi;
+    if (items.length) return countsFromItems(items);
+    return { hit: 0, missed: 0, partial: 0, open: 0 };
+  }, [recordFromApi, items]);
 
-  const rec = summary?.predictionRecord || { hit: 0, missed: 0, partial: 0, open: 0 };
+  const byAsset = useMemo(() => aggregateByAsset(items), [items]);
+
+  const hit = displayRecord.hit;
+  const missed = displayRecord.missed;
+  const partial = displayRecord.partial;
+  const open = displayRecord.open;
+  const closed = hit + missed + partial;
+  const strictPct = hitRateStrict(hit, missed, partial);
+  const weightedPct = weightedRate(hit, missed, partial);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black to-gray-900 text-white">
       <NavBar current="stats" />
+      <main className="max-w-5xl mx-auto px-4 py-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-cyan-300">📊 Stats</h1>
+          <p className="text-sm text-gray-400 mt-2 max-w-2xl leading-relaxed">
+            Live Edge Tests scorecard from{" "}
+            <code className="text-cyan-200/90 text-xs">GET /api/predictions?limit=200</code>. Same universe as{" "}
+            <Link to="/predictions" className="text-cyan-400 underline hover:text-cyan-300">
+              Live Edge Tests
+            </Link>
+            . If the API fails, nothing below is guessed.
+          </p>
+        </div>
 
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        <h1 className="text-2xl font-bold mb-1">Sentotrade Dashboard</h1>
-        <p className="text-sm text-gray-400 mb-6">Sentotrade runs simulated sentiment tests from gossip spikes — no human input.</p>
+        {loading && <p className="text-gray-400 text-sm mb-6">Loading…</p>}
 
-        {/* ── AI Intelligence Track Record ── */}
-        <section className="mb-8">
-          <h2 className="text-lg font-semibold text-cyan-300 mb-4">AI Intelligence Track Record</h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* AI-Gossip */}
-            <div className="bg-gray-900/50 border border-cyan-500/20 rounded-xl p-5 text-center">
-              <div className="text-xs text-cyan-400 font-semibold uppercase tracking-wider mb-2">AI-Gossip</div>
-              <div className="text-4xl font-bold mb-2">{serverPredictions.length}</div>
-              <div className="text-sm text-gray-400 mb-2">Simulated sentiment tests</div>
-              <div className="text-lg text-green-400">
-                {rec.hit + rec.missed + rec.partial > 0
-                  ? Math.round(((rec.hit + rec.partial * 0.5) / (rec.hit + rec.missed + rec.partial)) * 100) + "%"
-                  : "Pending"}
-              </div>
-              <div className="text-xs text-gray-500 mt-3 text-left">
-                BTC: {serverPredictions.filter((p) => p.asset?.includes("BTC")).length}<br />
-                Gold: {serverPredictions.filter((p) => p.asset?.includes("Gold")).length}<br />
-                Oil: {serverPredictions.filter((p) => p.asset?.includes("Oil")).length}<br />
-                TSLA: {serverPredictions.filter((p) => p.asset === "TSLA").length}
-              </div>
-            </div>
-
-            {/* Guru Bias */}
-            <div className="bg-gray-900/50 border border-purple-500/20 rounded-xl p-5 text-center">
-              <div className="text-xs text-purple-400 font-semibold uppercase tracking-wider mb-2">Guru Bias</div>
-              <div className="text-4xl font-bold mb-2">{summary?.categories?.bias || 0}</div>
-              <div className="text-sm text-gray-400 mb-2">Bias scans</div>
-              <div className="text-lg text-yellow-400">{summary?.latestBias?.label || "—"}</div>
-              <div className="text-xs text-gray-500 mt-3 text-left">
-                Score: {summary?.latestBias?.score || "—"}<br />
-                Tape: {summary?.latestBias?.tape || "—"}
-              </div>
-            </div>
-
-            {/* Manual */}
-            <div className="bg-gray-900/50 border border-gray-500/20 rounded-xl p-5 text-center">
-              <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-2">Manual</div>
-              <div className="text-4xl font-bold mb-2">{manual.length}</div>
-              <div className="text-sm text-gray-400 mb-2">Your tests</div>
-              <div className="text-lg text-gray-300">{manualScored.length > 0 ? manualRate + "%" : "--"}</div>
-            </div>
+        {unavailable && !loading && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-8 text-center text-amber-100">
+            Stats temporarily unavailable.
           </div>
-        </section>
+        )}
 
-        {/* ── Stats Bin ── */}
-        <section className="mb-8">
-          <h2 className="text-2xl font-bold mb-1">📊 Stats Bin</h2>
-          <p className="text-sm text-gray-400 mb-4">Accumulated data from every market scan, bias read, and prediction tracked.</p>
+        {!unavailable && !loading && (
+          <>
+            <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+                <div className="text-2xl font-bold text-white">{closed}</div>
+                <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Closed tests</div>
+              </div>
+              <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-4 text-center">
+                <div className="text-2xl font-bold text-green-400">{hit}</div>
+                <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Hits</div>
+              </div>
+              <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center">
+                <div className="text-2xl font-bold text-red-400">{missed}</div>
+                <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Missed</div>
+              </div>
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
+                <div className="text-2xl font-bold text-amber-300">{partial}</div>
+                <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Partial</div>
+              </div>
+              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 text-center">
+                <div className="text-2xl font-bold text-blue-400">{open}</div>
+                <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Open</div>
+              </div>
+              <div className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-4 text-center">
+                <div className="text-2xl font-bold text-cyan-300">{strictPct !== null ? `${strictPct}%` : "—"}</div>
+                <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Hit rate</div>
+                <div className="text-[10px] text-gray-600 mt-1 leading-tight">hits ÷ closed (excl. open)</div>
+              </div>
+            </section>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-cyan-400">{summary?.total || 0}</div>
-              <div className="text-xs text-gray-500 mt-1">Total Datapoints</div>
-            </div>
-            <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-green-400">{summary?.categories?.bias || 0}</div>
-              <div className="text-xs text-gray-500 mt-1">Bias Scores</div>
-            </div>
-            <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-yellow-400">{summary?.categories?.prediction || 0}</div>
-              <div className="text-xs text-gray-500 mt-1">Edge Tests</div>
-            </div>
-            <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-purple-400">{summary?.lastNewsCount || 0}</div>
-              <div className="text-xs text-gray-500 mt-1">News Snapshots</div>
-            </div>
-          </div>
-        </section>
-
-        {/* ── Prediction Record ── */}
-        <section className="mb-8">
-          <h3 className="text-lg font-semibold mb-3">Test Record</h3>
-          <div className="grid grid-cols-4 gap-3">
-            <div className="bg-green-900/20 border border-green-700 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-green-400">{rec.hit}</div>
-              <div className="text-xs text-gray-400">Hit</div>
-            </div>
-            <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-red-400">{rec.missed}</div>
-              <div className="text-xs text-gray-400">Missed</div>
-            </div>
-            <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-yellow-400">{rec.partial}</div>
-              <div className="text-xs text-gray-400">Partial</div>
-            </div>
-            <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-blue-400">{rec.open}</div>
-              <div className="text-xs text-gray-400">Open</div>
-            </div>
-          </div>
-        </section>
-
-        {/* ── Gossip Signal ── */}
-        <section className="mb-8">
-          <h3 className="text-lg font-semibold mb-2">🌐 Gossip Signal</h3>
-          {gossip ? (
-            <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4">
-              <p className="text-sm text-gray-300">Intensity: <span className="font-bold text-white">{gossip.intensity || "—"}</span></p>
-              <p className="text-sm text-gray-400 mt-1">
-                Top spywords: {Array.isArray(gossip.spywords) ? gossip.spywords.join(", ") : gossip.spywords || "—"}
+            {weightedPct !== null && (
+              <p className="text-xs text-gray-500 mb-8">
+                Weighted win score (partials count half):{" "}
+                <span className="text-gray-300 font-medium">{weightedPct}%</span>
+                {!recordFromApi && items.length > 0 ? (
+                  <span className="text-amber-600/90"> — row counts from last {items.length} items; full-file totals live on the server.</span>
+                ) : null}
               </p>
-              <p className="text-sm text-gray-400 mt-1">
-                Latest alerts: {Array.isArray(gossip.alerts) ? gossip.alerts.slice(0, 3).join(" • ") : gossip.latest || "—"}
-              </p>
-            </div>
-          ) : (
-            <div className="bg-gray-900/30 border border-gray-700 rounded-lg p-4">
-              <p className="text-sm text-gray-500">Gossip feed paused.</p>
-              <p className="text-xs text-gray-600 mt-1">Server endpoint /api/gossip not available.</p>
-            </div>
-          )}
-        </section>
+            )}
 
-        {/* Loading / Error */}
-        {loading && <p className="text-gray-500 text-sm mb-4">Loading stats…</p>}
-        {err && <p className="text-red-400 text-sm mb-4">{err}</p>}
-      </div>
+            <section className="mb-6">
+              <h2 className="text-lg font-semibold text-white mb-3">By asset</h2>
+              {items.length === 0 ? (
+                <p className="text-sm text-gray-400 border border-white/10 rounded-lg px-4 py-3 bg-white/[0.03]">
+                  No prediction rows returned yet.
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-white/10">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-white/5 text-gray-400 text-xs uppercase tracking-wide">
+                      <tr>
+                        <th className="px-3 py-2">Asset</th>
+                        <th className="px-3 py-2 text-right">Hit</th>
+                        <th className="px-3 py-2 text-right">Missed</th>
+                        <th className="px-3 py-2 text-right">Partial</th>
+                        <th className="px-3 py-2 text-right">Open</th>
+                        <th className="px-3 py-2 text-right">Hit rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {byAsset.map((row) => {
+                        const c = row.hit + row.missed + row.partial;
+                        const hr = c > 0 ? Math.round((row.hit / c) * 100) : null;
+                        return (
+                          <tr key={row.asset} className="border-t border-white/5 hover:bg-white/[0.02]">
+                            <td className="px-3 py-2 font-medium text-gray-200">{row.asset}</td>
+                            <td className="px-3 py-2 text-right text-green-400">{row.hit}</td>
+                            <td className="px-3 py-2 text-right text-red-400">{row.missed}</td>
+                            <td className="px-3 py-2 text-right text-amber-300">{row.partial}</td>
+                            <td className="px-3 py-2 text-right text-blue-400">{row.open}</td>
+                            <td className="px-3 py-2 text-right text-gray-300">{hr !== null ? `${hr}%` : "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </>
+        )}
+      </main>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+// Primary app nav: Trader Hub (/hub), Trader Desk (/pro), Live Edge Tests (/predictions), Stats (/stats), 101 (/tutor).
 // src/components/NavBar.tsx
 import { useState } from "react";
 import { Link } from "react-router";

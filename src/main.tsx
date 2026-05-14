@@ -37,6 +37,7 @@ createRoot(document.getElementById("root")!).render(
         <Route path="/pro" element={<ProDashboardPage />} />
         <Route path="/indices" element={<IndicesPage />} />
         <Route path="/predictions" element={<PredictionsPage />} />
+        {/* Stats: Live Edge Tests scorecard (reads /api/predictions) */}
         <Route path="/stats" element={<StatsPage />} />
         <Route path="/tutor" element={<TutorPage />} />
         <Route path="*" element={<Landing />} />
