@@ -8,6 +8,9 @@ interface PredItem {
   id?: string;
   asset?: string;
   status?: string;
+  source?: string;
+  why?: string;
+  timeframe?: string;
 }
 
 interface PredRecord {
@@ -41,6 +44,22 @@ function parseRecord(raw: unknown): PredRecord | null {
     };
   }
   return null;
+}
+
+/** Fast lane: headline heat → ~20m gross-move test (matches Dashboard Breaking Pulse). */
+function isFastPulseItem(p: PredItem): boolean {
+  if (String(p.source || "").toLowerCase() === "ai-gossip-fast") return true;
+  if (String(p.id || "").toLowerCase().startsWith("aigf_")) return true;
+  if (String(p.why || "").toLowerCase().includes("fast gossip")) return true;
+  return false;
+}
+
+/** Guru price-regime follow-through (multi-hour windows); engine rows use `sig_` ids. */
+function isRegimeItem(p: PredItem): boolean {
+  if (String(p.id || "").toLowerCase().startsWith("sig_")) return true;
+  const src = String(p.source || "").toLowerCase();
+  if (src.includes("guru") || src.includes("bias")) return true;
+  return false;
 }
 
 /** When `record` is missing, derive counts from the returned items (partial list — same logic shape as Predictions page). */
@@ -93,6 +112,72 @@ function weightedRate(hit: number, missed: number, partial: number) {
   const closed = hit + missed + partial;
   if (closed <= 0) return null;
   return Math.round(((hit + partial * 0.5) / closed) * 100);
+}
+
+function StatSegment({
+  title,
+  intro,
+  record,
+  hitRateSub,
+  borderClass,
+  footnote,
+}: {
+  title: string;
+  intro: string;
+  record: PredRecord;
+  hitRateSub: string;
+  borderClass: string;
+  footnote?: string;
+}) {
+  const hit = record.hit;
+  const missed = record.missed;
+  const partial = record.partial;
+  const open = record.open;
+  const closed = hit + missed + partial;
+  const strictPct = hitRateStrict(hit, missed, partial);
+  const weightedPct = weightedRate(hit, missed, partial);
+
+  return (
+    <section className={`mb-10 rounded-2xl border p-5 ${borderClass}`}>
+      <h2 className="text-lg font-bold text-white tracking-tight">{title}</h2>
+      <p className="text-sm text-gray-400 mt-2 max-w-3xl leading-relaxed">{intro}</p>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-5 mb-3">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+          <div className="text-2xl font-bold text-white">{closed}</div>
+          <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Closed</div>
+        </div>
+        <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-4 text-center">
+          <div className="text-2xl font-bold text-green-400">{hit}</div>
+          <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Hits</div>
+        </div>
+        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center">
+          <div className="text-2xl font-bold text-red-400">{missed}</div>
+          <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Missed</div>
+        </div>
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
+          <div className="text-2xl font-bold text-amber-300">{partial}</div>
+          <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Partial</div>
+        </div>
+        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 text-center">
+          <div className="text-2xl font-bold text-blue-400">{open}</div>
+          <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Open</div>
+        </div>
+        <div className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-4 text-center">
+          <div className="text-2xl font-bold text-cyan-300">{strictPct !== null ? `${strictPct}%` : "—"}</div>
+          <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Strict gross %</div>
+          <div className="text-[10px] text-gray-600 mt-1 leading-tight">{hitRateSub}</div>
+        </div>
+      </div>
+
+      {weightedPct !== null && (
+        <p className="text-xs text-gray-500">
+          Weighted score (partials half): <span className="text-gray-300 font-medium">{weightedPct}%</span>
+        </p>
+      )}
+      {footnote ? <p className="text-xs text-amber-600/85 mt-2 leading-relaxed">{footnote}</p> : null}
+    </section>
+  );
 }
 
 export default function StatsPage() {
@@ -154,15 +239,21 @@ export default function StatsPage() {
     return { hit: 0, missed: 0, partial: 0, open: 0 };
   }, [recordFromApi, items]);
 
+  const fastItems = useMemo(() => items.filter(isFastPulseItem), [items]);
+  const regimeItems = useMemo(() => items.filter(isRegimeItem), [items]);
+  const fastRecord = useMemo(() => countsFromItems(fastItems), [fastItems]);
+  const regimeRecord = useMemo(() => countsFromItems(regimeItems), [regimeItems]);
+
   const byAsset = useMemo(() => aggregateByAsset(items), [items]);
 
-  const hit = displayRecord.hit;
-  const missed = displayRecord.missed;
-  const partial = displayRecord.partial;
-  const open = displayRecord.open;
-  const closed = hit + missed + partial;
-  const strictPct = hitRateStrict(hit, missed, partial);
-  const weightedPct = weightedRate(hit, missed, partial);
+  const subsetNote =
+    items.length > 0
+      ? `Lane counts below use the latest ${items.length} rows returned by the API. Hit % can differ from full-file history if older rows sit outside this window.`
+      : undefined;
+
+  const archiveFootnote = recordFromApi
+    ? "Totals from the merged predictions file (all sources, all time) — same `record` object as the API."
+    : subsetNote;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black to-gray-900 text-white">
@@ -179,7 +270,8 @@ export default function StatsPage() {
             . If the API fails, nothing below is guessed.
           </p>
           <p className="text-sm text-gray-400 mt-3 max-w-2xl leading-relaxed">
-            Results are gross market-move tests before spread, slippage, fees, and platform costs.
+            Results are gross market-move tests before spread, slippage, fees, and platform costs. Fast headline reactions
+            (~20m) are shown separately from longer regime follow-through so one blended number does not define the product.
           </p>
         </div>
 
@@ -193,46 +285,35 @@ export default function StatsPage() {
 
         {!unavailable && !loading && (
           <>
-            <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-center">
-                <div className="text-2xl font-bold text-white">{closed}</div>
-                <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Closed tests</div>
-              </div>
-              <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-4 text-center">
-                <div className="text-2xl font-bold text-green-400">{hit}</div>
-                <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Hits</div>
-              </div>
-              <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-center">
-                <div className="text-2xl font-bold text-red-400">{missed}</div>
-                <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Missed</div>
-              </div>
-              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
-                <div className="text-2xl font-bold text-amber-300">{partial}</div>
-                <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Partial</div>
-              </div>
-              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 text-center">
-                <div className="text-2xl font-bold text-blue-400">{open}</div>
-                <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Open</div>
-              </div>
-              <div className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-4 text-center">
-                <div className="text-2xl font-bold text-cyan-300">{strictPct !== null ? `${strictPct}%` : "—"}</div>
-                <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Hit rate</div>
-                <div className="text-[10px] text-gray-600 mt-1 leading-tight">hits ÷ closed (excl. open)</div>
-              </div>
-            </section>
+            <StatSegment
+              title="🔥 Fast Pulse tests"
+              intro="Headline heat → short-window gross-move check (~20m). These rows use the fast gossip lane (`ai-gossip-fast` / `aigf_*`). They measure immediate pressure, not multi-hour follow-through."
+              record={fastRecord}
+              hitRateSub="hits ÷ closed · ~20m window"
+              borderClass="border-orange-500/30 bg-orange-950/15"
+              footnote={subsetNote}
+            />
 
-            {weightedPct !== null && (
-              <p className="text-xs text-gray-500 mb-8">
-                Weighted win score (partials count half):{" "}
-                <span className="text-gray-300 font-medium">{weightedPct}%</span>
-                {!recordFromApi && items.length > 0 ? (
-                  <span className="text-amber-600/90"> — row counts from last {items.length} items; full-file totals live on the server.</span>
-                ) : null}
-              </p>
-            )}
+            <StatSegment
+              title="🧭 Regime tests (Guru follow-through)"
+              intro="Price-triggered follow-through from the Guru engine — multi-hour windows (e.g. 4h–24h). Rows are identified by `sig_*` ids. Harder bar than the fast pulse; misses here are normal transparency."
+              record={regimeRecord}
+              hitRateSub="hits ÷ closed · multi-hour window"
+              borderClass="border-cyan-500/25 bg-cyan-950/15"
+              footnote={subsetNote}
+            />
+
+            <StatSegment
+              title="📚 Archive — all lanes"
+              intro="All sources and histories merged — the honest blended record. Use Fast vs Regime above to read the story; use this block for full-file totals and per-asset rollups."
+              record={displayRecord}
+              hitRateSub="hits ÷ closed (all sources)"
+              borderClass="border-white/10 bg-white/[0.04]"
+              footnote={archiveFootnote}
+            />
 
             <section className="mb-6">
-              <h2 className="text-lg font-semibold text-white mb-3">By asset</h2>
+              <h2 className="text-lg font-semibold text-white mb-3">By asset (all lanes)</h2>
               {items.length === 0 ? (
                 <p className="text-sm text-gray-400 border border-white/10 rounded-lg px-4 py-3 bg-white/[0.03]">
                   No prediction rows returned yet.
@@ -247,7 +328,7 @@ export default function StatsPage() {
                         <th className="px-3 py-2 text-right">Missed</th>
                         <th className="px-3 py-2 text-right">Partial</th>
                         <th className="px-3 py-2 text-right">Open</th>
-                        <th className="px-3 py-2 text-right">Hit rate</th>
+                        <th className="px-3 py-2 text-right">Strict gross %</th>
                       </tr>
                     </thead>
                     <tbody>
