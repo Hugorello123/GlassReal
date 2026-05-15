@@ -537,7 +537,8 @@ const PRED_TARGET_FRAC = 0.008;
 const PRED_STOP_LOSS_FRAC = 0.006;
 const PRED_WINDOW_HOURS = 12;
 
-/** Asset-specific target/stop/window. Values are percentages + hours. */
+/** Asset-specific target/stop/window. Values are percentages + hours.
+ *  Keys are Pascal (Gold, Oil). `assetCooldownKey` uses GOLD/OIL — getAssetRegime matches case-insensitively. */
 const ASSET_REGIMES = {
   Oil: { target: 0.8, stop: 0.6, windowHours: 12 },
   Gold: { target: 0.4, stop: 0.6, windowHours: 12 },
@@ -561,9 +562,16 @@ const COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 function getAssetRegime(asset) {
   const key = assetCooldownKey(asset);
-  /** ASSET_REGIMES keys are Pascal labels (Gold, Oil); assetCooldownKey returns GOLD, OIL. */
-  const regimeKey = key === "GOLD" ? "Gold" : key === "OIL" ? "Oil" : key;
-  const cfg = ASSET_REGIMES[regimeKey];
+  let cfg = ASSET_REGIMES[key];
+  if (!cfg && key) {
+    const kLower = String(key).toLowerCase();
+    for (const [regimeName, row] of Object.entries(ASSET_REGIMES)) {
+      if (String(regimeName).toLowerCase() === kLower) {
+        cfg = row;
+        break;
+      }
+    }
+  }
   return {
     targetFrac: ((cfg?.target ?? (PRED_TARGET_FRAC * 100)) / 100),
     stopFrac: ((cfg?.stop ?? (PRED_STOP_LOSS_FRAC * 100)) / 100),
