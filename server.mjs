@@ -68,16 +68,22 @@ function isExcludedNewsUrl(url) {
   return u.includes("reddit.com") || u.includes("redd.it");
 }
 
-const NEWS_Q_MACRO = encodeURIComponent(
-  "market OR markets OR stocks OR stock OR shares OR trader OR trading OR crypto OR bitcoin OR ethereum OR oil OR gold OR fed OR inflation OR earnings OR rates OR dollar OR yields OR tariff OR tariffs OR cpi OR sanctions OR revenue OR profit OR semiconductor OR semiconductors OR wall street OR nasdaq OR s&p OR export controls OR supply chain OR trade war OR rare earths OR Taiwan OR Boeing OR US China OR US-China OR china trade OR yuan OR renminbi OR delegation OR summit OR bessent OR chip export OR export ban"
-);
-const NEWS_Q_NAMES = encodeURIComponent(
-  "nvidia OR tesla OR apple OR microsoft OR google OR alphabet OR broadcom OR tsm OR micron OR intel OR palo alto OR super micro OR bitcoin OR btc OR eth OR ai stocks OR chip stocks OR SMCI OR AVGO OR MU OR INTC OR PANW OR SOUN"
-);
-/** US–China / trade / export-control lane (third NewsData pull). */
-const NEWS_Q_TRADE = encodeURIComponent(
-  "US China OR US-China OR USA China OR china trade OR trade tariffs OR tariff OR tariffs OR export controls OR export control OR rare earth OR rare earths OR Taiwan OR Boeing OR trade war OR trade talks OR trade truce OR semiconductor OR semiconductors OR tech stocks OR supply chain OR yuan OR renminbi OR delegation OR summit OR bessent OR Washington Beijing OR Beijing trade OR Trump China OR Trump tariff OR Trump trade OR chip controls OR export ban OR NVDA China OR TSMC"
-);
+/** NewsData: decoded `q` must be ≤100 chars (free tier). Multiple short strips, merged + deduped. */
+const NEWS_Q_STRIPS = [
+  "markets OR stocks OR earnings OR inflation",
+  "bitcoin OR ethereum OR crypto",
+  "oil OR gold OR dollar OR yields",
+  "fed OR rates OR cpi",
+  "tariffs OR trade war OR trade talks",
+  "china OR taiwan OR rare earths",
+  "export controls OR chip controls",
+  "nvidia OR tesla OR apple",
+  "boeing OR bessent OR beijing",
+  "semiconductor OR supply chain",
+];
+for (const _nq of NEWS_Q_STRIPS) {
+  if (_nq.length > 100) console.error("[News] FATAL: query strip >100 chars:", _nq.length);
+}
 
 function escapeReToken(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -175,20 +181,35 @@ async function fetchNewsWithCache() {
   let anyHttpOk = false;
   let rawMergedCount = 0;
   try {
-    const q1 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${NEWS_Q_MACRO}&language=en&size=14`;
-    const q2 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${NEWS_Q_NAMES}&language=en&size=14`;
-    const q3 = `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${NEWS_Q_TRADE}&language=en&size=14`;
-    const [r1, r2, r3] = await Promise.all([
-      fetch(q1, { signal: AbortSignal.timeout(5000) }),
-      fetch(q2, { signal: AbortSignal.timeout(5000) }),
-      fetch(q3, { signal: AbortSignal.timeout(5000) }),
-    ]);
+    const newsSize = 8;
+    const urls = NEWS_Q_STRIPS.map(
+      (strip) =>
+        `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${encodeURIComponent(strip)}&language=en&size=${newsSize}`
+    );
+    const responses = await Promise.all(urls.map((u) => fetch(u, { signal: AbortSignal.timeout(8000) })));
     const rows = [];
-    for (const r of [r1, r2, r3]) {
-      if (r.ok) anyHttpOk = true;
-      if (!r.ok) continue;
-      const d = await r.json();
-      if (d?.results?.length) rows.push(...d.results.map(a => ({ title: a.title, url: a.link })));
+    for (let i = 0; i < responses.length; i++) {
+      const r = responses[i];
+      const strip = NEWS_Q_STRIPS[i];
+      if (r.ok) {
+        anyHttpOk = true;
+        const d = await r.json().catch(() => ({}));
+        if (d?.results?.length) rows.push(...d.results.map((a) => ({ title: a.title, url: a.link })));
+      } else {
+        const text = await r.text().catch(() => "");
+        let detail = "";
+        try {
+          const j = JSON.parse(text);
+          detail = j?.results?.message || j?.results?.code || j?.message || j?.status || "";
+        } catch {
+          detail = text.slice(0, 160);
+        }
+        const shortQ = strip.length > 60 ? `${strip.slice(0, 57)}...` : strip;
+        const safeDetail = String(detail)
+          .replaceAll(String(NEWSDATA_KEY), "***")
+          .slice(0, 160);
+        console.log("[News] Query failed", r.status, shortQ, safeDetail);
+      }
     }
     const merged = dedupeArticlesByTitle(rows).filter((a) => !isExcludedNewsUrl(a.url));
     rawMergedCount = merged.length;
