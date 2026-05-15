@@ -135,9 +135,13 @@ function logStat(cat, data) {
   fs.appendFile(STATS_FILE, line, () => {});
 }
 
-/* ─── news cache (3 minutes) ─── */
+/* ─── news cache (5 minutes) + NewsData rate-limit hardening ─── */
 let newsCache = { articles: [{ title: "Loading...", url: "#" }], ts: 0 };
-const NEWS_CACHE_MS = 180000; // 3 minutes
+const NEWS_CACHE_MS = 300000; // 5 minutes
+let newsQueryOffset = 0;
+let NEWS_BACKOFF_UNTIL = 0;
+/** Real headline rows from last successful relevance-filtered fetch (not placeholder). */
+let LAST_GOOD_NEWS_ARTICLES = null;
 
 /** Reddit / community sources must not drive the main market radar (no Reddit RSS in this server path). */
 function isExcludedNewsUrl(url) {
@@ -248,18 +252,68 @@ function dedupeArticlesByTitle(rows) {
   return out.slice(0, 24);
 }
 
+function newsPlaceholderArticles(anyHttpOk) {
+  return [
+    {
+      title: anyHttpOk
+        ? "No high-quality market headlines passed the relevance filter right now."
+        : "News temporarily unavailable",
+      url: "#",
+    },
+  ];
+}
+
+function isPlaceholderNewsArticles(articles) {
+  if (!articles || !articles.length) return true;
+  if (articles.length !== 1) return false;
+  const t = String(articles[0]?.title || "");
+  return (
+    t.includes("News temporarily unavailable") ||
+    t.includes("No high-quality market headlines passed the relevance filter") ||
+    t === "Loading..."
+  );
+}
+
 async function fetchNewsWithCache() {
   const now = Date.now();
   if (now - newsCache.ts < NEWS_CACHE_MS) {
     console.log("[News] Serving cache, age:", Math.round((now - newsCache.ts) / 1000), "s");
     return newsCache.articles;
   }
+  if (now < NEWS_BACKOFF_UNTIL) {
+    console.log("[News] Backoff active until", new Date(NEWS_BACKOFF_UNTIL).toISOString());
+    let articles =
+      LAST_GOOD_NEWS_ARTICLES && LAST_GOOD_NEWS_ARTICLES.length
+        ? LAST_GOOD_NEWS_ARTICLES.slice()
+        : !isPlaceholderNewsArticles(newsCache.articles)
+          ? newsCache.articles.slice()
+          : null;
+    if (articles && articles.length) {
+      console.log("[News] Using last good articles", articles.length, "(backoff, no upstream fetch)");
+    } else {
+      articles = newsPlaceholderArticles(false);
+    }
+    newsCache = { articles, ts: now };
+    return articles;
+  }
+
+  const n = NEWS_Q_STRIPS.length;
+  const batchSize = 3;
+  const start = newsQueryOffset % n;
+  const strips = [];
+  for (let k = 0; k < batchSize; k++) strips.push(NEWS_Q_STRIPS[(start + k) % n]);
+  newsQueryOffset = (start + batchSize) % n;
+
+  const stripSummaries = strips.map((s) => (s.length > 52 ? `${s.slice(0, 49)}…` : s));
+  console.log("[News] Fetch strips", `${start}–${(start + batchSize - 1) % n}`, ":", stripSummaries.join(" | "));
+
   let articles = [];
   let anyHttpOk = false;
   let rawMergedCount = 0;
+  let saw429 = false;
   try {
     const newsSize = 8;
-    const urls = NEWS_Q_STRIPS.map(
+    const urls = strips.map(
       (strip) =>
         `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${encodeURIComponent(strip)}&language=en&size=${newsSize}`
     );
@@ -267,7 +321,11 @@ async function fetchNewsWithCache() {
     const rows = [];
     for (let i = 0; i < responses.length; i++) {
       const r = responses[i];
-      const strip = NEWS_Q_STRIPS[i];
+      const strip = strips[i];
+      if (r.status === 429) {
+        saw429 = true;
+        NEWS_BACKOFF_UNTIL = Date.now() + 10 * 60 * 1000;
+      }
       if (r.ok) {
         anyHttpOk = true;
         const d = await r.json().catch(() => ({}));
@@ -288,6 +346,9 @@ async function fetchNewsWithCache() {
         console.log("[News] Query failed", r.status, shortQ, safeDetail);
       }
     }
+    if (saw429) {
+      console.log("[News] Backoff set until", new Date(NEWS_BACKOFF_UNTIL).toISOString(), "(429 from NewsData)");
+    }
     const merged = dedupeArticlesByTitle(rows).filter((a) => !isExcludedNewsUrl(a.url));
     rawMergedCount = merged.length;
     articles = merged.filter((a) => isMarketRelevantHeadline(a.title)).slice(0, 20);
@@ -295,18 +356,18 @@ async function fetchNewsWithCache() {
   } catch (e) {
     console.log("[News] Fetch error:", e.message);
   }
-  if (!articles.length) {
-    articles = [
-      {
-        title: anyHttpOk
-          ? "No high-quality market headlines passed the relevance filter right now."
-          : "News temporarily unavailable",
-        url: "#",
-      },
-    ];
+
+  if (articles.length > 0) {
+    LAST_GOOD_NEWS_ARTICLES = articles.slice();
+  } else if (LAST_GOOD_NEWS_ARTICLES && LAST_GOOD_NEWS_ARTICLES.length) {
+    console.log("[News] Using last good articles", LAST_GOOD_NEWS_ARTICLES.length, "(empty or filtered-out fetch)");
+    articles = LAST_GOOD_NEWS_ARTICLES.slice();
+  } else {
+    articles = newsPlaceholderArticles(anyHttpOk);
   }
+
   newsCache = { articles, ts: now };
-  logStat("news", { count: articles.length, cached: false, rawMerged: rawMergedCount });
+  logStat("news", { count: articles.length, cached: false, rawMerged: rawMergedCount, saw429, strips: batchSize });
   return articles;
 }
 
