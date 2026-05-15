@@ -561,7 +561,9 @@ const COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 function getAssetRegime(asset) {
   const key = assetCooldownKey(asset);
-  const cfg = ASSET_REGIMES[key];
+  /** ASSET_REGIMES keys are Pascal labels (Gold, Oil); assetCooldownKey returns GOLD, OIL. */
+  const regimeKey = key === "GOLD" ? "Gold" : key === "OIL" ? "Oil" : key;
+  const cfg = ASSET_REGIMES[regimeKey];
   return {
     targetFrac: ((cfg?.target ?? (PRED_TARGET_FRAC * 100)) / 100),
     stopFrac: ((cfg?.stop ?? (PRED_STOP_LOSS_FRAC * 100)) / 100),
