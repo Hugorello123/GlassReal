@@ -22,7 +22,84 @@ console.log("[Sentotrade] PORT:", PORT, "SSL:", hasSSL);
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID   = process.env.TELEGRAM_CHAT_ID   || "";
 
+function formatPriceShockTelegram(p) {
+  const asset = String(p.asset || "?");
+  const call = String(p.call || "").toLowerCase() === "short" ? "Short" : "Long";
+  const win = String(p.timeframe || p.horizon || "20m");
+  const sev = String(p.shockSeverity || "pressure").toLowerCase();
+  const movePct = Number(p.shockMovePct);
+  const moveStr = Number.isFinite(movePct) ? `${movePct >= 0 ? "+" : ""}${movePct.toFixed(2)}%` : "?";
+  const headlineOk = p.shockHeadlineMatch === true;
+  const isDown = call === "Short";
+  const assetLine =
+    assetCooldownKey(asset) === "GOLD"
+      ? "Gold / XAUUSD"
+      : assetCooldownKey(asset) === "BTC"
+        ? "BTC / BTC-USD"
+        : assetCooldownKey(asset) === "ETH"
+          ? "ETH / ETH-USD"
+          : assetCooldownKey(asset) === "OIL"
+            ? "Oil / WTI (CL)"
+            : asset;
+  let pressure = "";
+  if (isDown) {
+    if (sev === "severe") pressure = "Severe downside";
+    else if (sev === "pressure") pressure = "Downside pressure";
+    else pressure = "Downside watch";
+  } else {
+    if (sev === "severe") pressure = "Severe upside / breakout pressure";
+    else if (sev === "pressure") pressure = "Upside pressure";
+    else pressure = "Upside watch";
+  }
+  const U = String(asset).toUpperCase();
+  const title =
+    sev === "severe"
+      ? isDown
+        ? assetCooldownKey(asset) === "GOLD"
+          ? "🔥 PRICE SHOCK — GOLD UNDER SEVERE PRESSURE"
+          : `🔥 PRICE SHOCK — ${U} UNDER SEVERE DOWNSIDE`
+        : `🔥 PRICE SHOCK — ${U} UPSIDE / BREAKOUT SHOCK`
+      : sev === "pressure"
+        ? `🔥 PRICE SHOCK — ${U} ${isDown ? "DOWNSIDE" : "UPSIDE"} PRESSURE`
+        : `⚠️ ${asset} ${isDown ? "downside" : "upside"} pressure building`;
+  const lines = [
+    title,
+    "",
+    `Asset: ${assetLine}`,
+    `Move: ${moveStr} in ${win}`,
+    `Pressure: ${pressure}`,
+    `Window: ${win} fast reaction`,
+    "",
+    "<b>Why this fired:</b>",
+    headlineOk
+      ? "Sharp short-window move with headline context in the feed."
+      : "Sharp short-window gross move before/alongside confirmed headline pressure. This is a short-window gross market-move test, not a trade instruction.",
+    "",
+    "<b>Test opened:</b>",
+    `${asset} ${call} · ${win} window`,
+    "Target: ±0.4% gross move (symmetric lane)",
+    "Invalidation: ±0.3% adverse move vs entry",
+    "",
+    headlineOk
+      ? ""
+      : [
+          "<b>Headline:</b> No clean headline match yet",
+          "<b>Signal source:</b> Price shock monitor",
+          "",
+          assetCooldownKey(asset) === "GOLD"
+            ? "Gold is moving before the news feed explains it. Watch DXY, yields, US-China headlines, and safe-haven unwind risk."
+            : "Price is moving fast — context may arrive late vs the tape.",
+          "",
+        ].join("\n"),
+    "<i>Not financial advice. Before spread, slippage, fees, and platform costs. Gross market-move test only.</i>",
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
 function formatAlert(p) {
+  if (String(p.source || "").toLowerCase() === "price-shock") {
+    return formatPriceShockTelegram(p);
+  }
   const lines = [
     "🧪 <b>SentoTrade Live Edge Test</b>",
     "",
@@ -1213,6 +1290,240 @@ function maybeFireFastGossipPredictions(articles, intensity, prices) {
   }
 }
 
+/* ─── Step 20a: Price shock monitor (short-window radar; source price-shock) ─── */
+const PRICE_SNAPSHOTS_FILE = path.join(__dirname, "price_snapshots.jsonl");
+const PRICE_SHOCK_POLL_MS = Number(process.env.PRICE_SHOCK_POLL_MS) || 120000;
+const PRICE_SHOCK_COOLDOWN_MS = Number(process.env.PRICE_SHOCK_COOLDOWN_MS) || 25 * 60 * 1000;
+const PRICE_SHOCK_TARGET_FRAC = 0.004;
+const PRICE_SHOCK_STOP_FRAC = 0.003;
+const SHOCK_SNAP_BUFFER_MAX = 45;
+
+/** Ladder thresholds as % (e.g. 0.4 == 0.40% move). */
+const SHOCK_LADDERS = {
+  GOLD: { watch20: 0.25, press20: 0.4, severe20: 0.6, severe60: 1.0 },
+  BTC: { watch20: 0.6, press20: 1.0, severe20: 1.5, severe60: 3.0 },
+  ETH: { watch20: 0.65, press20: 1.05, severe20: 1.55, severe60: 3.2 },
+  OIL: { watch20: 0.35, press20: 0.55, severe20: 0.85, severe60: 1.4 },
+};
+
+const SHOCK_PRICE_FIELDS = [
+  { asset: "Gold", field: "g", priceKey: "gold", regimeKey: "GOLD" },
+  { asset: "BTC", field: "b", priceKey: "btc", regimeKey: "BTC" },
+  { asset: "ETH", field: "e", priceKey: "eth", regimeKey: "ETH" },
+  { asset: "Oil", field: "o", priceKey: "oil", regimeKey: "OIL" },
+];
+
+let shockSnapBuffer = [];
+let shockMonRunning = false;
+
+function loadPriceShockBufferFromDisk() {
+  try {
+    if (!fs.existsSync(PRICE_SNAPSHOTS_FILE)) return;
+    const raw = fs.readFileSync(PRICE_SNAPSHOTS_FILE, "utf8").trim();
+    if (!raw) return;
+    const lines = raw.split("\n").filter(Boolean);
+    const tail = lines.slice(-SHOCK_SNAP_BUFFER_MAX);
+    for (const ln of tail) {
+      try {
+        const o = JSON.parse(ln);
+        if (o && o.t && ["g", "b", "e", "o"].every((k) => Number.isFinite(Number(o[k])))) shockSnapBuffer.push(o);
+      } catch {
+        /* skip bad line */
+      }
+    }
+    if (shockSnapBuffer.length) console.log("[PriceShock] Loaded", shockSnapBuffer.length, "snapshots from disk");
+  } catch (e) {
+    console.log("[PriceShock] load buffer:", e.message);
+  }
+}
+
+/** Newest snapshot whose age is at least `minAgeMs` (staleness floor for baseline price). */
+function findRefSnapForAge(buffer, nowMs, minAgeMs) {
+  let best = null;
+  let bestAge = Infinity;
+  for (let i = buffer.length - 1; i >= 0; i--) {
+    const s = buffer[i];
+    const ts = Date.parse(s.t);
+    if (!Number.isFinite(ts)) continue;
+    const age = nowMs - ts;
+    if (age < minAgeMs) continue;
+    if (age < bestAge) {
+      bestAge = age;
+      best = s;
+    }
+  }
+  return best;
+}
+
+function pctMoveSince(cur, oldPx) {
+  if (!Number.isFinite(cur) || !Number.isFinite(oldPx) || oldPx === 0) return null;
+  return ((cur - oldPx) / oldPx) * 100;
+}
+
+function priceShockCooldownOk(asset, call, merged, nowMs) {
+  const k = assetCooldownKey(asset);
+  const c = String(call || "").toLowerCase() === "short" ? "short" : "long";
+  const cutoff = nowMs - PRICE_SHOCK_COOLDOWN_MS;
+  for (const p of merged) {
+    if (String(p.source || "").toLowerCase() !== "price-shock") continue;
+    if (assetCooldownKey(p.asset) !== k) continue;
+    if (String(p.call || "").toLowerCase() !== c) continue;
+    const t = Date.parse(p.time || p.ts || "") || 0;
+    if (t >= cutoff) return false;
+  }
+  return true;
+}
+
+function classifyShockMove(m20, m60, ladder) {
+  const a20 = m20 != null && Number.isFinite(m20) ? Math.abs(m20) : 0;
+  const a60 = m60 != null && Number.isFinite(m60) ? Math.abs(m60) : 0;
+  const severe = a60 >= ladder.severe60 || a20 >= ladder.severe20;
+  const pressure = m20 != null && Number.isFinite(m20) && a20 >= ladder.press20;
+  const watch = m20 != null && Number.isFinite(m20) && a20 >= ladder.watch20;
+  if (!severe && !pressure && !watch) return null;
+
+  let tier;
+  if (severe) tier = "severe";
+  else if (pressure) tier = "pressure";
+  else tier = "watch";
+
+  const severeFrom60 = a60 >= ladder.severe60 && a20 < ladder.severe20;
+  const windowLabel = tier === "severe" && severeFrom60 ? "60m" : "20m";
+
+  let displayMove;
+  if (tier === "severe" && severeFrom60 && m60 != null && Number.isFinite(m60)) displayMove = m60;
+  else if (m20 != null && Number.isFinite(m20)) displayMove = m20;
+  else if (m60 != null && Number.isFinite(m60)) displayMove = m60;
+  else return null;
+
+  const call = displayMove >= 0 ? "Long" : "Short";
+  return { tier, windowLabel, displayMove, call };
+}
+
+function buildPriceShockRow(meta) {
+  const { asset, call, entry, tier, windowLabel, displayMove, headlineMatch } = meta;
+  if (!call || entry == null || !Number.isFinite(entry)) return null;
+  const isShort = call === "Short";
+  const targetFrac = PRICE_SHOCK_TARGET_FRAC;
+  const target = entry * (isShort ? (1 - targetFrac) : (1 + targetFrac));
+  const id =
+    "ps_" +
+    Date.now() +
+    "_" +
+    assetCooldownKey(asset).toLowerCase() +
+    "_" +
+    Math.random().toString(36).slice(2, 8);
+  const now = new Date().toISOString();
+  const why =
+    `[Price shock ${tier}/${windowLabel}] ${displayMove >= 0 ? "+" : ""}${displayMove.toFixed(2)}% — ` +
+    (headlineMatch ? "headline-assisted lane" : "no headline dependency; short-window gross move vs snapshot");
+  return {
+    id,
+    time: now,
+    source: "price-shock",
+    asset,
+    call,
+    entry,
+    target: target.toFixed(2),
+    targetPct: isShort ? `-${(targetFrac * 100).toFixed(1)}%` : `+${(targetFrac * 100).toFixed(1)}%`,
+    timeframe: windowLabel,
+    horizon: windowLabel,
+    stopLossFrac: PRICE_SHOCK_STOP_FRAC,
+    why,
+    status: "open",
+    outcome: "—",
+    shockSeverity: tier,
+    shockMovePct: Number(Number(displayMove).toFixed(4)),
+    shockHeadlineMatch: !!headlineMatch,
+  };
+}
+
+async function runPriceShockMonitor() {
+  if (shockMonRunning) return;
+  shockMonRunning = true;
+  try {
+    const prices = await fetchPrices();
+    if (!prices) return;
+    const g = prices.gold,
+      b = prices.btc,
+      e = prices.eth,
+      o = prices.oil;
+    if (![g, b, e, o].every((x) => Number.isFinite(x))) {
+      console.log("[PriceShock] skip tick — incomplete spot row");
+      return;
+    }
+    const nowMs = Date.now();
+    const snap = { t: new Date().toISOString(), g, b, e, o };
+    try {
+      fs.appendFileSync(PRICE_SNAPSHOTS_FILE, JSON.stringify(snap) + "\n");
+    } catch (e) {
+      console.log("[PriceShock] cannot append snapshot:", e.message);
+      return;
+    }
+    shockSnapBuffer.push(snap);
+    if (shockSnapBuffer.length > SHOCK_SNAP_BUFFER_MAX) {
+      shockSnapBuffer.splice(0, shockSnapBuffer.length - SHOCK_SNAP_BUFFER_MAX);
+    }
+
+    if (shockSnapBuffer.length < 3) return;
+
+    const ref20 = findRefSnapForAge(shockSnapBuffer, nowMs, 18 * 60 * 1000);
+    const ref60 = findRefSnapForAge(shockSnapBuffer, nowMs, 55 * 60 * 1000);
+    if (!ref20) return;
+
+    const merged = readAllPredictionsMerged();
+    const newestFirst = merged.slice().sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")));
+    const openTests = new Set(
+      newestFirst
+        .filter((p) => String(p.status || "").toLowerCase() === "open")
+        .map((p) => assetCooldownKey(p.asset) + "|" + String(p.call || "").toLowerCase())
+    );
+    const batch = [];
+
+    for (const { asset, field, priceKey, regimeKey } of SHOCK_PRICE_FIELDS) {
+      const cur = prices[priceKey];
+      if (!Number.isFinite(cur)) continue;
+      const p20 = ref20 && Number.isFinite(Number(ref20[field])) ? Number(ref20[field]) : null;
+      const p60 = ref60 && Number.isFinite(Number(ref60[field])) ? Number(ref60[field]) : null;
+      const m20 = p20 != null ? pctMoveSince(cur, p20) : null;
+      const m60 = p60 != null ? pctMoveSince(cur, p60) : null;
+      const ladder = SHOCK_LADDERS[regimeKey];
+      if (!ladder) continue;
+      if (m20 == null) continue;
+
+      const cls = classifyShockMove(m20, m60, ladder);
+      if (!cls) continue;
+
+      const openKey = assetCooldownKey(asset) + "|" + String(cls.call).toLowerCase();
+      if (openTests.has(openKey)) {
+        console.log(`[PriceShock] SKIP ${asset} ${cls.call} — open test exists`);
+        continue;
+      }
+      if (!priceShockCooldownOk(asset, cls.call, merged, nowMs)) continue;
+
+      const row = buildPriceShockRow({
+        asset,
+        call: cls.call,
+        entry: cur,
+        tier: cls.tier,
+        windowLabel: cls.windowLabel,
+        displayMove: cls.displayMove,
+        headlineMatch: false,
+      });
+      if (!row) continue;
+      batch.push(row);
+      merged.push(row);
+      openTests.add(openKey);
+      console.log(`[PriceShock] ${cls.tier} ${asset} ${cls.call} ${cls.displayMove.toFixed(2)}% (${cls.windowLabel})`);
+    }
+    if (batch.length) savePredictions(batch);
+  } catch (e) {
+    console.log("[PriceShock]", e && e.message);
+  } finally {
+    shockMonRunning = false;
+  }
+}
+
 let resolveRunning = false;
 async function resolvePredictions() {
   if (resolveRunning) return;
@@ -1603,3 +1914,11 @@ setInterval(runSignalEngine, 300000);
 const RESOLVE_MS = Number(process.env.RESOLVE_INTERVAL_MS) || 120000;
 resolvePredictions();
 setInterval(resolvePredictions, RESOLVE_MS);
+
+loadPriceShockBufferFromDisk();
+setTimeout(() => {
+  runPriceShockMonitor().catch(() => {});
+}, 8000);
+setInterval(() => {
+  runPriceShockMonitor().catch(() => {});
+}, PRICE_SHOCK_POLL_MS);

@@ -21,8 +21,8 @@ import GuruDrawer from "@/components/GuruDrawer";
 import NavBar from "@/components/NavBar";
 import { buildThemes, type WatchdogTheme } from "@/lib/watchdogThemes";
 
-/** Latest row from `/api/predictions` — FastGossip / ai-gossip-fast lane only. */
-interface FastPulsePred {
+/** Latest row from `/api/predictions` — FastGossip lane + Step 20a price-shock. */
+interface BreakingPulsePred {
   id?: string;
   source?: string;
   why?: string;
@@ -31,14 +31,27 @@ interface FastPulsePred {
   call?: string;
   timeframe?: string;
   horizon?: string;
+  shockSeverity?: string;
+  shockMovePct?: number;
 }
 
-function isFastPulseRow(p: FastPulsePred): boolean {
+function isFastPulseRow(p: BreakingPulsePred): boolean {
   if (String(p.source || "").toLowerCase() === "ai-gossip-fast") return true;
   const id = String(p.id || "").toLowerCase();
   if (id.startsWith("aigf_")) return true;
   if (String(p.why || "").toLowerCase().includes("fast gossip")) return true;
   return false;
+}
+
+function isPriceShockRow(p: BreakingPulsePred): boolean {
+  if (String(p.source || "").toLowerCase() === "price-shock") return true;
+  const id = String(p.id || "").toLowerCase();
+  if (id.startsWith("ps_")) return true;
+  return false;
+}
+
+function isBreakingPulseRow(p: BreakingPulsePred): boolean {
+  return isFastPulseRow(p) || isPriceShockRow(p);
 }
 
 /** Text after `Fast gossip (intensity N):` in `why`, else full why trimmed. */
@@ -69,7 +82,7 @@ function formatRelativePulse(iso: string | undefined): string {
 }
 
 function useBreakingPulse() {
-  const [row, setRow] = useState<FastPulsePred | null>(null);
+  const [row, setRow] = useState<BreakingPulsePred | null>(null);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -77,8 +90,8 @@ function useBreakingPulse() {
       try {
         const r = await fetch("/api/predictions?limit=30", { cache: "no-store" });
         const d = await r.json();
-        const items: FastPulsePred[] = Array.isArray(d.items) ? d.items : [];
-        const hit = items.find(isFastPulseRow) ?? null;
+        const items: BreakingPulsePred[] = Array.isArray(d.items) ? d.items : [];
+        const hit = items.find(isBreakingPulseRow) ?? null;
         if (alive) {
           setRow(hit);
           setLoaded(true);
@@ -329,14 +342,51 @@ export default function Dashboard() {
   );
 }
 
-function BreakingPulseStrip({ row, loaded }: { row: FastPulsePred | null; loaded: boolean }) {
+function isGoldAsset(asset: string | undefined): boolean {
+  const a = String(asset || "").toUpperCase();
+  return a.includes("GOLD") || a.includes("XAU");
+}
+
+/** Prefer server `shockMovePct`; else parse from `[Price shock tier/window] ±x.xx%`. */
+function parseShockMovePct(row: BreakingPulsePred): number | null {
+  if (typeof row.shockMovePct === "number" && Number.isFinite(row.shockMovePct)) return row.shockMovePct;
+  const w = String(row.why || "");
+  const m = w.match(/\[Price shock\s+[^\]]+\]\s*([+-]?\d+(?:\.\d+)?)\s*%/i);
+  if (m) {
+    const n = parseFloat(m[1]);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function priceShockStripTitle(row: BreakingPulsePred): string {
+  const assetU = String(row.asset || "ASSET").toUpperCase().trim() || "ASSET";
+  const sev = String(row.shockSeverity || "").toLowerCase();
+  const isDown = String(row.call || "").toLowerCase() === "short";
+  if (isGoldAsset(row.asset) && sev === "severe" && isDown) return "🔥 GOLD UNDER SEVERE PRESSURE";
+  if (isDown) return `🔥 PRICE SHOCK — ${assetU} UNDER PRESSURE`;
+  return `🔥 PRICE SHOCK — ${assetU} UPSIDE PRESSURE`;
+}
+
+function pulseStripHot(row: BreakingPulsePred | null): boolean {
+  if (!row) return false;
+  const ageMin = ageMinutesFromIso(row.time);
+  if (ageMin == null || !Number.isFinite(ageMin)) return false;
+  if (isPriceShockRow(row)) {
+    const sev = String(row.shockSeverity || "").toLowerCase();
+    if (sev === "severe") return ageMin < 30;
+    return ageMin < 15;
+  }
+  return ageMin < 5;
+}
+
+function BreakingPulseStrip({ row, loaded }: { row: BreakingPulsePred | null; loaded: boolean }) {
   const windowLabel = String(row?.timeframe || row?.horizon || "20m").trim() || "20m";
   const callU = String(row?.call || "Long").toUpperCase();
   const asset = String(row?.asset || "—").trim() || "—";
   const rel = formatRelativePulse(row?.time);
   const headline = parseFastGossipHeadline(row?.why);
-  const ageMin = ageMinutesFromIso(row?.time);
-  const isHot = row != null && ageMin != null && ageMin < 5;
+  const isHot = pulseStripHot(row);
 
   if (!loaded) {
     return (
@@ -351,9 +401,32 @@ function BreakingPulseStrip({ row, loaded }: { row: FastPulsePred | null; loaded
     return (
       <div className="mb-5 rounded-xl border border-slate-700/50 bg-black/30 px-4 py-3">
         <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Breaking Pulse</div>
-        <p className="text-sm text-slate-400 mt-1">No breaking pulse right now — scanning headlines.</p>
+        <p className="text-sm text-slate-400 mt-1">No breaking pulse right now — scanning headlines and price shocks.</p>
         <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
           Short-window gross market-move tests before spread, slippage, fees, and platform costs — not instructions.
+        </p>
+      </div>
+    );
+  }
+
+  if (isPriceShockRow(row)) {
+    const move = parseShockMovePct(row);
+    const movePart =
+      move != null ? `${move >= 0 ? "+" : ""}${move.toFixed(2)}%` : null;
+    const metaBits = [asset, callU, windowLabel, rel];
+    if (movePart) metaBits.splice(3, 0, movePart);
+    const title = priceShockStripTitle(row);
+    const border = isHot ? "border-orange-500/45 bg-orange-950/25" : "border-amber-500/35 bg-amber-950/15";
+    const whyText = String(row.why || "").trim();
+    return (
+      <div className={`mb-5 rounded-xl border px-4 py-3 ${border}`}>
+        <div className={`text-xs font-bold uppercase tracking-wide ${isHot ? "text-orange-300" : "text-amber-200/90"}`}>{title}</div>
+        <p className="text-sm text-slate-100 mt-1.5 font-medium">{metaBits.join(" · ")}</p>
+        {whyText ? (
+          <p className="text-sm text-slate-300 mt-2 leading-snug">{whyText}</p>
+        ) : null}
+        <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+          Short-window gross market-move test before spread, slippage, fees, and platform costs.
         </p>
       </div>
     );
