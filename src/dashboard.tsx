@@ -274,7 +274,11 @@ export default function Dashboard() {
 
           <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-6 text-xs text-slate-400 border-t border-slate-700/50 pt-3">
             <span>Live Edge Tests: {stats.open !== null ? stats.open : "—"} active</span>
-            <span>Today's accuracy: {stats.hitrate !== null ? `${stats.hitrate}%` : "—"}</span>
+            <span>
+              Blended archive accuracy:{" "}
+              <span className="tabular-nums text-slate-500">{stats.hitrate !== null ? `${stats.hitrate}%` : "—"}</span>
+              <span className="text-slate-600"> (regime tuning)</span>
+            </span>
             <span className="text-cyan-500/70 md:ml-auto">Updates every 60s</span>
           </div>
         </section>

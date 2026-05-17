@@ -4,6 +4,12 @@ import { Link } from "react-router";
 import NavBar from "@/components/NavBar";
 import { apiUrl } from "@/lib/sameOriginApi";
 
+/**
+ * When true, hit-% tiles and table % stay visible but de-emphasized (archive / regime-tuning period).
+ * Flip to false when you want full visual weight on strict % again.
+ */
+const SOFT_HIT_PERCENT_DISPLAY = true;
+
 interface PredItem {
   id?: string;
   asset?: string;
@@ -136,6 +142,7 @@ function StatSegment({
   const closed = hit + missed + partial;
   const strictPct = hitRateStrict(hit, missed, partial);
   const weightedPct = weightedRate(hit, missed, partial);
+  const soft = SOFT_HIT_PERCENT_DISPLAY;
 
   return (
     <section className={`mb-10 rounded-2xl border p-5 ${borderClass}`}>
@@ -163,16 +170,38 @@ function StatSegment({
           <div className="text-2xl font-bold text-blue-400">{open}</div>
           <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Open</div>
         </div>
-        <div className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-4 text-center">
-          <div className="text-2xl font-bold text-cyan-300">{strictPct !== null ? `${strictPct}%` : "—"}</div>
+        <div
+          className={`rounded-xl border p-4 text-center ${
+            soft
+              ? "border-white/10 bg-white/[0.02]"
+              : "border-cyan-500/25 bg-cyan-500/5"
+          }`}
+        >
+          <div
+            className={`tabular-nums ${
+              soft
+                ? "text-lg sm:text-xl font-medium text-gray-500"
+                : "text-2xl font-bold text-cyan-300"
+            }`}
+          >
+            {strictPct !== null ? `${strictPct}%` : "—"}
+          </div>
           <div className="text-[11px] text-gray-500 mt-1 uppercase tracking-wide">Strict gross %</div>
-          <div className="text-[10px] text-gray-600 mt-1 leading-tight">{hitRateSub}</div>
+          {soft ? (
+            <div className="text-[10px] text-gray-600 mt-1 leading-tight space-y-0.5">
+              <div>Archive blend · read counts first</div>
+              <div className="text-gray-600/90">{hitRateSub}</div>
+            </div>
+          ) : (
+            <div className="text-[10px] text-gray-600 mt-1 leading-tight">{hitRateSub}</div>
+          )}
         </div>
       </div>
 
       {weightedPct !== null && (
-        <p className="text-xs text-gray-500">
-          Weighted score (partials half): <span className="text-gray-300 font-medium">{weightedPct}%</span>
+        <p className={`text-xs ${soft ? "text-gray-600" : "text-gray-500"}`}>
+          Weighted score (partials half):{" "}
+          <span className={soft ? "text-gray-500 font-normal" : "text-gray-300 font-medium"}>{weightedPct}%</span>
         </p>
       )}
       {footnote ? <p className="text-xs text-amber-600/85 mt-2 leading-relaxed">{footnote}</p> : null}
@@ -273,6 +302,12 @@ export default function StatsPage() {
             Results are gross market-move tests before spread, slippage, fees, and platform costs. Fast headline reactions
             (~20m) are shown separately from longer regime follow-through so one blended number does not define the product.
           </p>
+          <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3 max-w-2xl">
+            <p className="text-sm text-gray-500 leading-relaxed">
+              Gold hit rate reflects the old 0.8% target regime (now tuned to 0.4%). New regime tests are resolving and
+              should appear higher. These are gross-movement directional tests, not profit signals.
+            </p>
+          </div>
         </div>
 
         {loading && <p className="text-gray-400 text-sm mb-6">Loading…</p>}
@@ -328,7 +363,14 @@ export default function StatsPage() {
                         <th className="px-3 py-2 text-right">Missed</th>
                         <th className="px-3 py-2 text-right">Partial</th>
                         <th className="px-3 py-2 text-right">Open</th>
-                        <th className="px-3 py-2 text-right">Strict gross %</th>
+                        <th className="px-3 py-2 text-right text-gray-500">
+                          Strict gross %
+                          {SOFT_HIT_PERCENT_DISPLAY ? (
+                            <span className="block font-normal normal-case text-[10px] text-gray-600 tracking-normal">
+                              interim
+                            </span>
+                          ) : null}
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -342,7 +384,13 @@ export default function StatsPage() {
                             <td className="px-3 py-2 text-right text-red-400">{row.missed}</td>
                             <td className="px-3 py-2 text-right text-amber-300">{row.partial}</td>
                             <td className="px-3 py-2 text-right text-blue-400">{row.open}</td>
-                            <td className="px-3 py-2 text-right text-gray-300">{hr !== null ? `${hr}%` : "—"}</td>
+                            <td
+                              className={`px-3 py-2 text-right tabular-nums ${
+                                SOFT_HIT_PERCENT_DISPLAY ? "text-gray-500 text-xs" : "text-gray-300"
+                              }`}
+                            >
+                              {hr !== null ? `${hr}%` : "—"}
+                            </td>
                           </tr>
                         );
                       })}
