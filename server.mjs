@@ -96,9 +96,80 @@ function formatPriceShockTelegram(p) {
   return lines.join("\n");
 }
 
+function formatCatalystWatchTelegram(p) {
+  const asset = String(p.asset || "?");
+  const cluster = String(p.cluster || "").toLowerCase();
+  const win = String(p.timeframe || p.horizon || "20m-4h");
+  const theme =
+    cluster === "musk_intel"
+      ? "Musk / Tesla / Intel"
+      : cluster === "fed_pivot"
+        ? "Fed policy / yields / inflation"
+        : cluster === "us_china_trade"
+          ? "US–China trade & export controls"
+          : "Macro / catalyst headlines";
+  const whyBody =
+    cluster === "musk_intel"
+      ? "Rumor pressure is building around Musk / Tesla / Intel. No confirmed acquisition. This may create temporary sentiment volatility in related semiconductor and EV-linked names."
+      : cluster === "fed_pivot"
+        ? "Macro headline pressure is building around the Fed, yields, the dollar, or inflation prints. This may create short-lived volatility across rates-sensitive assets."
+        : cluster === "us_china_trade"
+          ? "Headline pressure is building around US–China trade, tariffs, Taiwan risk, or export controls. This may create temporary volatility in semiconductors and macro proxies."
+          : String(p.why || "Awareness-only headline clustering. Not a trade signal.");
+  const impact =
+    cluster === "musk_intel"
+      ? [
+          "INTC — direct rumor/catalyst target",
+          "TSLA — Tesla/Musk link",
+          "NVDA / TSM / AVGO / MU / SMCI — semiconductor sympathy watch",
+        ].join("\n")
+      : cluster === "fed_pivot"
+        ? [
+            "Gold — rates / yield pressure",
+            "DXY — dollar sensitivity",
+            "BTC / ETH — risk-asset sensitivity",
+            "TSLA / NVDA — high-beta equity sensitivity",
+          ].join("\n")
+        : cluster === "us_china_trade"
+          ? [
+              "Gold — safe-haven / macro risk",
+              "DXY — macro dollar sensitivity",
+              "TSM — Taiwan / chip supply-chain sensitivity",
+              "NVDA — chip export-control risk",
+              "INTC — US chip policy / foundry angle",
+              "AVGO — semiconductor basket risk",
+              "MU — China / memory-cycle exposure",
+              "TSLA — China demand / exposure risk",
+            ].join("\n")
+          : (Array.isArray(p.affectedAssets) ? p.affectedAssets : [])
+              .map((x) => String(x))
+              .filter(Boolean)
+              .join("\n");
+  const lines = [
+    `⚠️ <b>SPECULATIVE CATALYST WATCH — ${asset}</b>`,
+    "",
+    `<b>Theme:</b> ${theme}`,
+    `<b>Asset:</b> ${asset}`,
+    `<b>Window:</b> ${win}`,
+    `<b>Status:</b> Awareness only`,
+    "",
+    "<b>Why this fired:</b>",
+    whyBody,
+    "",
+    "<b>Watchlist impact:</b>",
+    impact,
+    "",
+    "<i>Not financial advice. Not a trade signal.</i>",
+  ];
+  return lines.join("\n");
+}
+
 function formatAlert(p) {
   if (String(p.source || "").toLowerCase() === "price-shock") {
     return formatPriceShockTelegram(p);
+  }
+  if (String(p.source || "").toLowerCase() === "catalyst-watch") {
+    return formatCatalystWatchTelegram(p);
   }
   const lines = [
     "🧪 <b>SentoTrade Live Edge Test</b>",
@@ -320,6 +391,155 @@ function isPlaceholderNewsArticles(articles) {
   );
 }
 
+/** Catalyst Watch: anticipatory headline clustering — awareness rows only (not trade tests). */
+const CATALYST_WINDOW_MS = 10 * 60 * 1000;
+const CATALYST_ASSET_THROTTLE_MS = 30 * 60 * 1000;
+let catalystHeadlineRing = [];
+const catalystAssetLastFire = new Map();
+
+const CATALYST_CLUSTERS = {
+  musk_intel: {
+    keywords: [
+      "musk",
+      "tesla",
+      "intel",
+      "intc",
+      "buyout",
+      "acquisition",
+      "takeover",
+      "foundry",
+      "declined to comment",
+      "avoided question",
+      "refused to answer",
+      "speculation",
+      "rumor",
+    ],
+    assets: ["INTC", "TSLA", "NVDA", "TSM", "AVGO", "MU", "SMCI"],
+    why:
+      "Speculative catalyst watch: rumor pressure building around Musk / Tesla / Intel. No confirmed acquisition. Awareness only — not a trade signal.",
+  },
+  fed_pivot: {
+    keywords: [
+      "fed",
+      "federal reserve",
+      "pivot",
+      "rate cut",
+      "emergency meeting",
+      "powell",
+      "yields",
+      "dollar",
+      "cpi",
+      "inflation",
+    ],
+    assets: ["Gold", "DXY", "BTC", "ETH", "TSLA", "NVDA"],
+    why:
+      "Speculative catalyst watch: macro headline pressure building around Fed policy, yields, the dollar, or inflation. Awareness only — not a trade signal.",
+  },
+  us_china_trade: {
+    keywords: [
+      "china",
+      "beijing",
+      "taiwan",
+      "tariffs",
+      "tariff",
+      "trade war",
+      "trade talks",
+      "trade truce",
+      "export controls",
+      "chip controls",
+      "rare earth",
+      "rare earths",
+      "boeing",
+      "bessent",
+      "xi",
+      "trump",
+    ],
+    assets: ["Gold", "DXY", "TSM", "NVDA", "INTC", "AVGO", "MU", "TSLA"],
+    why:
+      "Speculative catalyst watch: headline pressure building around US–China trade, tariffs, or export controls. Awareness only — not a trade signal.",
+  },
+};
+
+function normalizeCatalystTitle(title) {
+  return String(title || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pushCatalystHeadlinesFromArticles(articles) {
+  const now = Date.now();
+  for (const a of articles || []) {
+    const titleNorm = normalizeCatalystTitle(a?.title);
+    if (!titleNorm || titleNorm === "loading...") continue;
+    catalystHeadlineRing.push({ t: now, titleNorm });
+  }
+  catalystHeadlineRing = catalystHeadlineRing.filter((x) => now - x.t <= CATALYST_WINDOW_MS);
+}
+
+function catalystClusterMatchCount(hay) {
+  const out = Object.create(null);
+  for (const clusterId of Object.keys(CATALYST_CLUSTERS)) {
+    const kws = CATALYST_CLUSTERS[clusterId].keywords;
+    let n = 0;
+    for (const kw of kws) {
+      const k = String(kw).toLowerCase().trim();
+      if (!k) continue;
+      if (k.includes(" ")) {
+        if (hay.includes(k)) n++;
+      } else if (headlineHasToken(hay, k)) {
+        n++;
+      }
+    }
+    out[clusterId] = n;
+  }
+  return out;
+}
+
+function detectCatalystWatch(articles) {
+  const rows = [];
+  if (!articles || !articles.length) return rows;
+  if (isPlaceholderNewsArticles(articles)) return rows;
+
+  pushCatalystHeadlinesFromArticles(articles);
+  const now = Date.now();
+  const hay = catalystHeadlineRing.map((x) => x.titleNorm).join(" . ");
+  if (!hay) return rows;
+
+  const matchCounts = catalystClusterMatchCount(hay);
+  const rand = () => Math.random().toString(36).slice(2, 8);
+
+  for (const clusterId of Object.keys(CATALYST_CLUSTERS)) {
+    if ((matchCounts[clusterId] || 0) < 2) continue;
+    const def = CATALYST_CLUSTERS[clusterId];
+    const idTs = Date.now();
+    const affectedAssets = def.assets.slice();
+    for (const asset of def.assets) {
+      const tk = `${clusterId}|${assetCooldownKey(asset)}`;
+      const last = catalystAssetLastFire.get(tk) || 0;
+      if (now - last < CATALYST_ASSET_THROTTLE_MS) continue;
+      catalystAssetLastFire.set(tk, now);
+      rows.push({
+        id: `cw_${idTs}_${clusterId}_${asset}_${rand()}`,
+        time: new Date().toISOString(),
+        source: "catalyst-watch",
+        asset,
+        call: "Watch",
+        status: "watching",
+        timeframe: "20m-4h",
+        horizon: "20m-4h",
+        entry: null,
+        target: null,
+        affectedAssets,
+        cluster: clusterId,
+        why: def.why,
+        outcome: "—",
+      });
+    }
+  }
+  return rows;
+}
+
 loadNewsLastGoodFromDisk();
 hydrateNewsCacheFromDiskSnapshot();
 
@@ -414,6 +634,18 @@ async function fetchNewsWithCache() {
     articles = LAST_GOOD_NEWS_ARTICLES.slice();
   } else {
     articles = newsPlaceholderArticles(anyHttpOk);
+  }
+
+  if (!isPlaceholderNewsArticles(articles) && articles.length) {
+    try {
+      const cwRows = detectCatalystWatch(articles);
+      if (cwRows.length) {
+        savePredictions(cwRows);
+        console.log("[CatalystWatch] Appended", cwRows.length, "awareness rows");
+      }
+    } catch (e) {
+      console.log("[CatalystWatch]", e?.message || e);
+    }
   }
 
   newsCache = { articles, ts: now };
@@ -847,7 +1079,9 @@ function savePredictions(preds) {
   for (const p of preds) {
     fs.appendFileSync(PREDICTIONS_FILE, JSON.stringify(p) + "\n");
     logStat("prediction", { id: p.id, asset: p.asset, call: p.call, status: p.status });
-    if (String(p.status || "").toLowerCase() === "open") {
+    const st = String(p.status || "").toLowerCase();
+    const src = String(p.source || "").toLowerCase();
+    if (st === "open" || src === "catalyst-watch") {
       sendTelegramAlert(formatAlert(p)).catch(e => console.error("[Telegram]", e.message));
     }
   }
@@ -874,6 +1108,9 @@ function predictionRecordFromMerged() {
   const merged = readAllPredictionsMerged();
   let hit = 0, missed = 0, partial = 0, open = 0;
   for (const p of merged) {
+    if (String(p.source || "").toLowerCase() === "catalyst-watch") continue;
+    if (String(p.status || "").toLowerCase() === "watching") continue;
+    if (String(p.call || "").trim().toLowerCase() === "watch") continue;
     const st = String(p.status ?? "open").toLowerCase();
     if (st === "hit") hit++;
     else if (st === "missed") missed++;
@@ -1659,6 +1896,9 @@ async function resolvePredictions() {
     let changed = false;
 
     for (const p of records) {
+      if (String(p.source || "").toLowerCase() === "catalyst-watch") continue;
+      if (String(p.status || "").toLowerCase() === "watching") continue;
+      if (String(p.call || "").trim().toLowerCase() === "watch") continue;
       const st = String(p.status || "open").toLowerCase();
       if (st !== "open") continue;
 
