@@ -180,7 +180,7 @@ function StatSegment({
           <div
             className={`tabular-nums ${
               soft
-                ? "text-lg sm:text-xl font-medium text-gray-500"
+                ? "text-base sm:text-lg font-medium text-gray-600"
                 : "text-2xl font-bold text-cyan-300"
             }`}
           >
@@ -274,6 +274,10 @@ export default function StatsPage() {
   const regimeRecord = useMemo(() => countsFromItems(regimeItems), [regimeItems]);
 
   const byAsset = useMemo(() => aggregateByAsset(items), [items]);
+  const byAssetNonEmpty = useMemo(
+    () => byAsset.filter((row) => row.hit + row.missed + row.partial + row.open > 0),
+    [byAsset]
+  );
 
   const subsetNote =
     items.length > 0
@@ -302,10 +306,15 @@ export default function StatsPage() {
             Results are gross market-move tests before spread, slippage, fees, and platform costs. Fast headline reactions
             (~20m) are shown separately from longer regime follow-through so one blended number does not define the product.
           </p>
-          <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3 max-w-2xl">
+          <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3 max-w-2xl space-y-3">
             <p className="text-sm text-gray-500 leading-relaxed">
               Gold hit rate reflects the old 0.8% target regime (now tuned to 0.4%). New regime tests are resolving and
               should appear higher. These are gross-movement directional tests, not profit signals.
+            </p>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              Strict gross percentages are archive diagnostics, not profit claims. Older Gold rows used stricter regimes;
+              newer rows are being tuned. Read the hit/miss/partial/open counts first — the % is context, not the
+              headline.
             </p>
           </div>
         </div>
@@ -353,6 +362,10 @@ export default function StatsPage() {
                 <p className="text-sm text-gray-400 border border-white/10 rounded-lg px-4 py-3 bg-white/[0.03]">
                   No prediction rows returned yet.
                 </p>
+              ) : byAssetNonEmpty.length === 0 ? (
+                <p className="text-sm text-gray-400 border border-white/10 rounded-lg px-4 py-3 bg-white/[0.03]">
+                  No per-asset scored activity in this API window (counts are all zero).
+                </p>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-white/10">
                   <table className="w-full text-sm text-left">
@@ -374,7 +387,7 @@ export default function StatsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {byAsset.map((row) => {
+                      {byAssetNonEmpty.map((row) => {
                         const c = row.hit + row.missed + row.partial;
                         const hr = c > 0 ? Math.round((row.hit / c) * 100) : null;
                         return (
@@ -386,7 +399,7 @@ export default function StatsPage() {
                             <td className="px-3 py-2 text-right text-blue-400">{row.open}</td>
                             <td
                               className={`px-3 py-2 text-right tabular-nums ${
-                                SOFT_HIT_PERCENT_DISPLAY ? "text-gray-500 text-xs" : "text-gray-300"
+                                SOFT_HIT_PERCENT_DISPLAY ? "text-gray-600 text-xs" : "text-gray-300"
                               }`}
                             >
                               {hr !== null ? `${hr}%` : "—"}

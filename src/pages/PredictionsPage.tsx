@@ -1,5 +1,5 @@
 // PredictionsPage.tsx — real prediction tracker. No fake history.
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import NavBar from "@/components/NavBar";
 import { apiUrl } from "@/lib/sameOriginApi";
@@ -42,10 +42,15 @@ function savePredictions(list: Prediction[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 }
 
+/** De-emphasize big hit-% hero + track cards (public-readiness / regime archive period). */
+const SOFT_PREDICTIONS_SCOREBOARD = true;
+
 /** Rows from `GET /api/predictions` (engine + resolver). */
 interface ServerSignal {
   id?: string;
   source?: string;
+  cluster?: string;
+  affectedAssets?: string[];
   time?: string;
   asset?: string;
   call?: string;
@@ -92,6 +97,90 @@ function formatServerNum(x: number | string | undefined) {
   if (typeof x === "number" && Number.isFinite(x))
     return x.toLocaleString("en-US", { maximumFractionDigits: 2 });
   return String(x);
+}
+
+/** Catalyst Watch / awareness rows — not Live Edge Tests; keep out of scored-test table. */
+function isCatalystAwarenessRow(r: ServerSignal): boolean {
+  if (String(r.source || "").toLowerCase() === "catalyst-watch") return true;
+  if (String(r.status || "").toLowerCase() === "watching") return true;
+  if (String(r.call || "").trim().toLowerCase() === "watch") return true;
+  return false;
+}
+
+function catalystClusterTheme(cluster: string): string {
+  const c = String(cluster || "").toLowerCase();
+  if (c === "musk_intel") return "Musk / Tesla / Intel";
+  if (c === "fed_pivot") return "Fed policy / yields / inflation";
+  if (c === "us_china_trade") return "US–China trade & export controls";
+  return "Catalyst cluster";
+}
+
+function formatRelativeAgo(iso: string | undefined): string {
+  const t = Date.parse(String(iso || ""));
+  if (!Number.isFinite(t)) return "recently";
+  const mins = (Date.now() - t) / 60000;
+  if (mins < 1 / 60) return "just now";
+  if (mins < 1) return `${Math.max(1, Math.round(mins * 60))}s ago`;
+  if (mins < 60) return `${Math.round(mins)}m ago`;
+  const h = Math.floor(mins / 60);
+  const rm = Math.round(mins % 60);
+  if (h < 48) return rm > 0 ? `${h}h ${rm}m ago` : `${h}h ago`;
+  return `${Math.round(mins / 1440)}d ago`;
+}
+
+type CatalystWatchGroup = {
+  cluster: string;
+  theme: string;
+  time: string;
+  horizon: string;
+  assets: string[];
+};
+
+/** One card per cluster (newest activity), max `maxGroups`. */
+function buildCatalystWatchGroups(rows: ServerSignal[], maxGroups: number): CatalystWatchGroup[] {
+  const m = new Map<
+    string,
+    { cluster: string; timeMs: number; timeIso: string; horizon: string; assets: Set<string> }
+  >();
+  for (const r of rows) {
+    if (!isCatalystAwarenessRow(r)) continue;
+    const cluster = String(r.cluster || "unknown");
+    const t = Date.parse(String(r.time || "")) || 0;
+    let g = m.get(cluster);
+    const assets = new Set<string>();
+    const one = String(r.asset || "").trim();
+    if (one) assets.add(one);
+    const aff = Array.isArray(r.affectedAssets) ? r.affectedAssets : [];
+    for (const x of aff) {
+      const s = String(x || "").trim();
+      if (s) assets.add(s);
+    }
+    if (!g) {
+      m.set(cluster, {
+        cluster,
+        timeMs: t,
+        timeIso: String(r.time || ""),
+        horizon: String(r.horizon || r.timeframe || "20m-4h"),
+        assets,
+      });
+    } else {
+      if (t > g.timeMs) {
+        g.timeMs = t;
+        g.timeIso = String(r.time || "");
+      }
+      for (const s of assets) g.assets.add(s);
+    }
+  }
+  return [...m.values()]
+    .map((v) => ({
+      cluster: v.cluster,
+      theme: catalystClusterTheme(v.cluster),
+      time: v.timeIso,
+      horizon: v.horizon,
+      assets: [...v.assets].sort(),
+    }))
+    .sort((a, b) => (Date.parse(b.time) || 0) - (Date.parse(a.time) || 0))
+    .slice(0, maxGroups);
 }
 
 function serverStatusBadge(st: string | undefined) {
@@ -177,12 +266,16 @@ export default function PredictionsPage() {
     savePredictions(predictions);
   }, [predictions]);
 
-  const serverTrack = buildServerTrackStats(serverRecord, serverItems);
+  const serverTestItems = useMemo(() => serverItems.filter((r) => !isCatalystAwarenessRow(r)), [serverItems]);
+  const serverCatalystItems = useMemo(() => serverItems.filter(isCatalystAwarenessRow), [serverItems]);
+  const serverCatalystGroups = useMemo(() => buildCatalystWatchGroups(serverCatalystItems, 6), [serverCatalystItems]);
+
+  const serverTrack = buildServerTrackStats(serverRecord, serverTestItems);
 
   const serverDisplayed =
-    serverShowAll || serverItems.length <= SERVER_RECENT_COUNT
-      ? serverItems
-      : serverItems.slice(0, SERVER_RECENT_COUNT);
+    serverShowAll || serverTestItems.length <= SERVER_RECENT_COUNT
+      ? serverTestItems
+      : serverTestItems.slice(0, SERVER_RECENT_COUNT);
 
   function addPrediction() {
     if (!form.asset || !form.target || !form.timeframe) return;
@@ -220,12 +313,20 @@ export default function PredictionsPage() {
           <div className="flex items-center justify-between mb-2">
             <h1 className="text-4xl font-bold">🧪 Live Edge Tests</h1>
             {!HIDE_LOCAL_PREDICTION_TRACKER && (
-              <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-center max-w-[155px]">
-                <div className="text-2xl font-bold text-green-400">
+              <div
+                className={`rounded-lg px-4 py-2 text-center max-w-[175px] border ${
+                  SOFT_PREDICTIONS_SCOREBOARD ? "bg-white/[0.03] border-white/10" : "bg-white/5 border-white/10"
+                }`}
+              >
+                <div
+                  className={`text-2xl font-semibold tabular-nums ${
+                    SOFT_PREDICTIONS_SCOREBOARD ? "text-gray-500" : "text-green-400"
+                  }`}
+                >
                   {serverTrack.resolved > 0 ? `${serverTrack.hitRatePct}%` : "—"}
                 </div>
-                <div className="text-xs font-medium text-gray-300">Hit rate</div>
-                <div className="text-xs text-gray-400 leading-snug mt-1">
+                <div className="text-xs font-medium text-gray-500">Hit rate (closed tests)</div>
+                <div className="text-[11px] text-gray-600 leading-snug mt-1">
                   {serverTrack.resolved > 0
                     ? `${serverTrack.hit} / ${serverTrack.resolved} closed · server`
                     : "Loading or no closed calls"}
@@ -237,38 +338,78 @@ export default function PredictionsPage() {
             Results are gross market-move tests before spread, slippage, fees, and platform costs.
           </p>
 
-          {/* ── AI Intelligence Track Record ── */}
+          {/* ── Radar Track Record ── */}
           <section className="mb-8">
             <div className="flex items-center gap-3 mb-5">
               <span className="text-2xl">🤖</span>
               <div>
-                <h2 className="text-xl font-bold text-cyan-300 m-0">AI Intelligence Track Record</h2>
+                <h2 className="text-xl font-bold text-cyan-300 m-0">Radar Track Record</h2>
                 <p className="text-sm text-gray-300 mt-1 leading-relaxed max-w-xl">
-                  Sentotrade runs simulated sentiment tests from gossip spikes — no human input
+                  Transparent gross-move tests from live prices, headline momentum, price shocks, and catalyst context —
+                  logged automatically, not hand-picked.
                 </p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <TrackCard
-                title="🔮 Guru Bias Signal"
-                items={serverItems}
+                title="🧭 Regime follow-through"
+                items={serverTestItems}
                 bucket="guru"
                 desc="Scheduled auto-calls"
                 assets="BTC + Gold + Oil"
+                softScoreboard={SOFT_PREDICTIONS_SCOREBOARD}
               />
               <TrackCard
-                title="📡 AI-Gossip Spike"
-                items={serverItems}
+                title="📡 Fast Pulse tests"
+                items={serverTestItems}
                 bucket="ai"
                 desc="Sentiment-triggered"
                 assets="Any asset from news"
+                softScoreboard={SOFT_PREDICTIONS_SCOREBOARD}
               />
-              <ServerCombinedTrackCard stats={serverTrack} loading={serverLoading} />
+              <ServerCombinedTrackCard
+                stats={serverTrack}
+                loading={serverLoading}
+                softScoreboard={SOFT_PREDICTIONS_SCOREBOARD}
+              />
             </div>
 
+          {serverCatalystGroups.length > 0 ? (
+            <div
+              role="region"
+              aria-labelledby="catalyst-watch-heading"
+              className="mb-6 rounded-xl border border-amber-500/30 bg-amber-950/15 px-4 py-4"
+            >
+              <h2 id="catalyst-watch-heading" className="text-lg font-semibold text-amber-200 mb-1">
+                ⚠️ Catalyst Watch
+              </h2>
+              <p className="text-sm text-gray-400 mb-4 leading-relaxed max-w-2xl">
+                Awareness-only catalyst stories currently being monitored. No entry. No target. Not scored.
+              </p>
+              <ul className="space-y-3">
+                {serverCatalystGroups.map((g) => (
+                  <li key={g.cluster} className="rounded-lg border border-white/10 bg-black/25 px-3 py-3 text-sm">
+                    <div className="font-semibold text-white">{g.theme}</div>
+                    <div className="text-gray-500 text-xs mt-1">
+                      {formatRelativeAgo(g.time)} · {g.horizon}
+                    </div>
+                    <div className="text-gray-400 mt-2 text-xs">
+                      <span className="text-gray-500">Assets:</span> {g.assets.length ? g.assets.join(", ") : "—"}
+                    </div>
+                    <div className="text-[11px] text-amber-200/80 mt-2">Outcome: Awareness only</div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
             <div className="bg-white/5 border border-white/10 rounded-lg p-4 text-sm text-gray-300 leading-relaxed">
-              <strong className="text-gray-100">How live edge tests work:</strong> Our system continuously scans live market data, news sentiment, and on-chain signals. When a strong pattern emerges (Guru Bias) or a gossip spike crosses the threshold (AI-Gossip), it runs a simulated sentiment test with entry, target, and timeframe. These are transparent experiments, not trade recommendations. You can also add your own calls below; those stay in this browser only. Each test is resolved automatically or manually scored as Hit, Partial, or Missed.
+              <strong className="text-gray-100">How live edge tests work:</strong> The stack continuously scans live
+              prices, headline momentum, price shocks, and catalyst context. When a regime pattern or a fast pulse
+              threshold fires, it opens a simulated gross-move test with entry, target, and timeframe. Those are
+              transparent experiments, not trade recommendations. You can also add your own calls below; those stay in
+              this browser only. Each test is resolved automatically or manually scored as Hit, Partial, or Missed.
             </div>
           </section>
 
@@ -286,7 +427,13 @@ export default function PredictionsPage() {
             )}
             {serverLoading ? (
               <p className="text-sm text-gray-400">Loading server signals…</p>
-            ) : serverItems.length === 0 ? (
+            ) : serverTestItems.length === 0 && serverItems.length > 0 ? (
+              <p className="text-sm text-gray-300 border border-amber-500/20 rounded-lg px-4 py-3 bg-amber-500/5 mb-4">
+                No scored Live Edge Tests in this batch — only Catalyst Watch awareness rows were returned. See{" "}
+                <strong className="text-amber-200">Catalyst Watch</strong> above; scored tests will reappear when the
+                engine opens Long/Short rows.
+              </p>
+            ) : serverTestItems.length === 0 ? (
               <p className="text-sm text-gray-300 border border-white/10 rounded-lg px-4 py-3 bg-white/[0.03]">
                 No server signals to show yet (engine may be between runs, or filters are quiet).
               </p>
@@ -325,8 +472,11 @@ export default function PredictionsPage() {
                   <tbody>
                     {serverDisplayed.map((row, ri) => {
                       const st = serverStatusBadge(row.status);
-                      const call = String(row.call || "—");
+                      const callRaw = String(row.call || "—");
+                      const call = callRaw;
                       const win = row.horizon || row.timeframe || "—";
+                      const isShort = callRaw.toLowerCase() === "short";
+                      const isLong = callRaw.toLowerCase() === "long";
                       return (
                         <Fragment key={row.id ? `${row.id}-${ri}` : `srv-${ri}-${row.time}-${row.asset}`}>
                           <tr className="border-b border-white/5 hover:bg-white/[0.04]">
@@ -336,7 +486,7 @@ export default function PredictionsPage() {
                             <td className="px-3 py-3 font-semibold text-white whitespace-nowrap">{row.asset || "—"}</td>
                             <td
                               className={`px-3 py-3 font-semibold whitespace-nowrap ${
-                                call.toLowerCase() === "short" ? "text-red-400" : "text-green-400"
+                                isShort ? "text-red-400" : isLong ? "text-green-400" : "text-gray-300"
                               }`}
                             >
                               {call}
@@ -368,7 +518,7 @@ export default function PredictionsPage() {
                   </tbody>
                 </table>
               </div>
-              {serverItems.length > SERVER_RECENT_COUNT ? (
+              {serverTestItems.length > SERVER_RECENT_COUNT ? (
                 <button
                   type="button"
                   onClick={() => setServerShowAll((v) => !v)}
@@ -376,7 +526,7 @@ export default function PredictionsPage() {
                 >
                   {serverShowAll
                     ? "Show fewer rows"
-                    : `Show full history (${serverItems.length} rows)`}
+                    : `Show full history (${serverTestItems.length} scored rows)`}
                 </button>
               ) : null}
               </div>
@@ -597,7 +747,7 @@ function resolvedRate(items: ServerSignal[]) {
       partial++;
       continue;
     }
-    if (statusRaw === "open" || statusRaw === "void" || statusRaw === "") continue;
+    if (statusRaw === "open" || statusRaw === "void" || statusRaw === "" || statusRaw === "watching") continue;
     const oc = String(r.outcome || "").toLowerCase();
     if (oc.includes("target reached") || oc.includes("reached @")) hit++;
     else if (oc.includes("partial move")) partial++;
@@ -643,16 +793,27 @@ function buildServerTrackStats(
   };
 }
 
-function ServerCombinedTrackCard({ stats, loading }: { stats: ServerTrackStats; loading: boolean }) {
+function ServerCombinedTrackCard({
+  stats,
+  loading,
+  softScoreboard,
+}: {
+  stats: ServerTrackStats;
+  loading: boolean;
+  softScoreboard?: boolean;
+}) {
   const { resolved, rate, hitRatePct, hit, missed, partial, open, fromApi } = stats;
+  const soft = !!softScoreboard;
   return (
-    <div className="rounded-xl border p-4 text-center border-green-500/25 bg-green-500/5">
-      <div className="text-xs font-bold uppercase tracking-wider text-green-300">📊 All server signals</div>
-      <div className="text-3xl font-extrabold text-green-300 my-2">
+    <div className={`rounded-xl border p-4 text-center ${soft ? "border-white/15 bg-white/[0.04]" : "border-green-500/25 bg-green-500/5"}`}>
+      <div className={`text-xs font-bold uppercase tracking-wider ${soft ? "text-gray-400" : "text-green-300"}`}>
+        📊 All server signals
+      </div>
+      <div className={`font-extrabold my-2 tabular-nums ${soft ? "text-xl text-gray-500" : "text-3xl text-green-300"}`}>
         {loading ? "…" : resolved > 0 ? `${hitRatePct}%` : "—"}
       </div>
-      <div className="text-xs font-medium text-gray-300">Hit rate (resolved)</div>
-      <div className="text-xs text-gray-400 mt-1 leading-snug">
+      <div className="text-xs font-medium text-gray-500">Hit rate (resolved)</div>
+      <div className={`text-xs mt-1 leading-snug ${soft ? "text-gray-600" : "text-gray-400"}`}>
         Win score {resolved > 0 ? `${rate}%` : "—"} — partials count half
       </div>
       <div className="text-xs text-gray-400 mt-2 leading-snug">
@@ -670,7 +831,22 @@ function ServerCombinedTrackCard({ stats, loading }: { stats: ServerTrackStats; 
   );
 }
 
-function TrackCard({ title, items, bucket, desc, assets }: { title: string; items: ServerSignal[]; bucket: "guru" | "ai" | "manual"; desc: string; assets: string }) {
+function TrackCard({
+  title,
+  items,
+  bucket,
+  desc,
+  assets,
+  softScoreboard,
+}: {
+  title: string;
+  items: ServerSignal[];
+  bucket: "guru" | "ai" | "manual";
+  desc: string;
+  assets: string;
+  softScoreboard?: boolean;
+}) {
+  const soft = !!softScoreboard;
   const bucketed = items.filter((r) => classify(r) === bucket);
   const { resolved, rate } = resolvedRate(bucketed);
   const sampleAssets = Array.from(new Set(bucketed.slice(0, 8).map((r) => r.asset || "—"))).join(", ") || "—";
@@ -683,7 +859,9 @@ function TrackCard({ title, items, bucket, desc, assets }: { title: string; item
       <div className="text-3xl font-extrabold text-white my-2">{bucketed.length}</div>
       <div className="text-xs font-medium text-gray-300">{desc}</div>
       <div className="text-xs text-gray-400 mt-1">{assets}</div>
-      <div className="text-lg font-bold text-yellow-400 mt-2">{resolved > 0 ? `${rate}%` : "—"}</div>
+      <div className={`font-bold mt-2 tabular-nums ${soft ? "text-base text-gray-500" : "text-lg text-yellow-400"}`}>
+        {resolved > 0 ? `${rate}%` : "—"}
+      </div>
       <div className="text-xs text-gray-400 mt-2 truncate leading-snug">{sampleAssets}</div>
     </div>
   );

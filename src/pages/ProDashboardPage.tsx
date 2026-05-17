@@ -1,5 +1,6 @@
 // ProDashboardPage.tsx — real data only. No demo signals.
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import NavBar from "@/components/NavBar";
 
 /* ────── types ────── */
@@ -28,6 +29,13 @@ type SignalRow = {
 };
 
 /* ────── helpers ────── */
+function isCatalystAwarenessApiRow(r: Record<string, unknown>): boolean {
+  if (String(r.source || "").toLowerCase() === "catalyst-watch") return true;
+  if (String(r.status || "").toLowerCase() === "watching") return true;
+  if (String(r.call || "").trim().toLowerCase() === "watch") return true;
+  return false;
+}
+
 function fmtPct(n: number | null): string {
   if (n === null || !Number.isFinite(n)) return "n/a";
   return `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
@@ -132,18 +140,26 @@ export default function ProDashboardPage() {
 
     async function loadSignals() {
       try {
-        const resp = await fetch("/api/signal/recent?limit=5");
+        const resp = await fetch("/api/signal/recent?limit=30");
         if (!resp.ok) return;
         const data = await resp.json();
-        const rows = Array.isArray(data) ? data : data?.items || [];
-        if (rows.length && alive) {
-          setSignals(rows.map((r: any) => ({
-            time: r.time || r.ts || "—",
-            signal: r.signal || r.label || "—",
-            why: r.why || r.reason || "",
-            horizon: r.horizon || r.h || "6h",
-            outcome: r.outcome_pct != null ? `${r.outcome_pct}%` : r.outcome || "—",
-          })));
+        const raw = Array.isArray(data) ? data : data?.items || [];
+        const scored = (raw as Record<string, unknown>[]).filter((r) => !isCatalystAwarenessApiRow(r));
+        if (scored.length && alive) {
+          setSignals(
+            scored.slice(0, 5).map((r: Record<string, unknown>) => ({
+              time: String(r.time || r.ts || "—"),
+              signal: String(r.signal || r.label || r.call || "—"),
+              why: String(r.why || r.reason || ""),
+              horizon: String(r.horizon || r.h || "6h"),
+              outcome:
+                r.outcome_pct != null && Number.isFinite(Number(r.outcome_pct))
+                  ? `${r.outcome_pct}%`
+                  : String(r.outcome || "—"),
+            }))
+          );
+        } else if (alive) {
+          setSignals([]);
         }
       } catch {
         // signals stay empty
@@ -274,7 +290,11 @@ export default function ProDashboardPage() {
             <h2 className="text-lg font-semibold mb-3">Recent Signals</h2>
             {signals.length === 0 ? (
               <p className="text-sm text-gray-400">
-                No signals generated yet. Signal engine needs backend wiring or manual entry.
+                No scored signals in the latest batch (Catalyst Watch awareness rows are listed on{" "}
+                <Link to="/predictions" className="text-cyan-400 hover:underline">
+                  Live Edge Tests
+                </Link>
+                ). Flow endpoints stay optional; bias still updates from live prices and headlines.
               </p>
             ) : (
               <div className="overflow-x-auto">
