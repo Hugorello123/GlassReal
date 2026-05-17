@@ -142,8 +142,54 @@ let newsQueryOffset = 0;
 let NEWS_BACKOFF_UNTIL = 0;
 /** Real headline rows from last successful relevance-filtered fetch (not placeholder). */
 let LAST_GOOD_NEWS_ARTICLES = null;
+const NEWS_LAST_GOOD_FILE = path.join(__dirname, "news_last_good.json");
 
-/** Reddit / community sources must not drive the main market radar (no Reddit RSS in this server path). */
+function loadNewsLastGoodFromDisk() {
+  try {
+    if (!fs.existsSync(NEWS_LAST_GOOD_FILE)) return;
+    const raw = fs.readFileSync(NEWS_LAST_GOOD_FILE, "utf8").trim();
+    if (!raw) return;
+    const o = JSON.parse(raw);
+    const arr = Array.isArray(o?.articles) ? o.articles : Array.isArray(o) ? o : null;
+    if (!arr || !arr.length) return;
+    const cleaned = arr
+      .filter((a) => a && typeof a.title === "string" && typeof a.url === "string")
+      .map((a) => ({ title: String(a.title).slice(0, 500), url: String(a.url).slice(0, 2000) }))
+      .slice(0, 30);
+    if (!cleaned.length) return;
+    LAST_GOOD_NEWS_ARTICLES = cleaned;
+    console.log(
+      "[News] Loaded last-good snapshot from disk:",
+      cleaned.length,
+      "articles",
+      o?.savedAt ? `(saved ${o.savedAt})` : ""
+    );
+  } catch (e) {
+    console.log("[News] Could not load news_last_good.json:", e.message);
+  }
+}
+
+function saveNewsLastGoodToDisk(articles) {
+  if (!articles || !articles.length) return;
+  if (isPlaceholderNewsArticles(articles)) return;
+  try {
+    const payload = { savedAt: new Date().toISOString(), articles };
+    const body = JSON.stringify(payload);
+    const tmp = NEWS_LAST_GOOD_FILE + ".tmp." + process.pid;
+    fs.writeFileSync(tmp, body, "utf8");
+    fs.renameSync(tmp, NEWS_LAST_GOOD_FILE);
+    console.log("[News] Saved last-good snapshot to disk:", articles.length, "articles");
+  } catch (e) {
+    console.log("[News] Could not save news_last_good.json:", e.message);
+  }
+}
+
+function hydrateNewsCacheFromDiskSnapshot() {
+  if (!LAST_GOOD_NEWS_ARTICLES || !LAST_GOOD_NEWS_ARTICLES.length) return;
+  if (!isPlaceholderNewsArticles(newsCache.articles) && newsCache.articles?.length > 1) return;
+  newsCache = { articles: LAST_GOOD_NEWS_ARTICLES.slice(), ts: Date.now() };
+  console.log("[News] Hydrated in-memory cache from disk snapshot for cold start / placeholder bootstrap");
+}
 function isExcludedNewsUrl(url) {
   const u = String(url || "").toLowerCase();
   return u.includes("reddit.com") || u.includes("redd.it");
@@ -274,6 +320,9 @@ function isPlaceholderNewsArticles(articles) {
   );
 }
 
+loadNewsLastGoodFromDisk();
+hydrateNewsCacheFromDiskSnapshot();
+
 async function fetchNewsWithCache() {
   const now = Date.now();
   if (now - newsCache.ts < NEWS_CACHE_MS) {
@@ -359,6 +408,7 @@ async function fetchNewsWithCache() {
 
   if (articles.length > 0) {
     LAST_GOOD_NEWS_ARTICLES = articles.slice();
+    saveNewsLastGoodToDisk(articles);
   } else if (LAST_GOOD_NEWS_ARTICLES && LAST_GOOD_NEWS_ARTICLES.length) {
     console.log("[News] Using last good articles", LAST_GOOD_NEWS_ARTICLES.length, "(empty or filtered-out fetch)");
     articles = LAST_GOOD_NEWS_ARTICLES.slice();
