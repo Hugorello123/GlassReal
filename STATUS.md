@@ -5,6 +5,21 @@
 
 ---
 
+## 📖 Trader Hub (`/hub`) — Legend + system status + APIs
+
+The **Trader Hub** page shows the same definitions users see in the UI:
+
+**Legend (status chips)**  
+● **Live** = Fully working · ● **Evolving** = Works, improving · ● **Preview** = Early version · ● **Snapshot** = Partial / planned · ● **Reference** = Info page  
+
+**System status row**  
+Dashboard · Trader Desk · Watchdog · Live Data (needs API keys) — dots reflect overall readiness; “Live Data” stays **amber** when optional server keys or upstream feeds limit depth (Polygon, Bitquery, NewsData, etc.).
+
+**Primary same-origin API routes** (Node `server.mjs`):  
+`/api/health` · `/api/news` · `/api/prices` · `/api/predictions` · `/api/gossip` · `/api/indices` · `/api/stats` — Dashboard and Watchdog lean on **news + predictions + gossip**; Trader Desk adds prices, flows, and bias widgets as wired.
+
+---
+
 ## ✅ FULLY LIVE — Real Data Flowing
 
 | Feature | Data Source | Update Freq | Status |

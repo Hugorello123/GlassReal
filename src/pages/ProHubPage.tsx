@@ -188,6 +188,19 @@ export default function ProHubPage() {
                 <span className="text-gray-300">Live Data (needs API keys)</span>
               </div>
             </div>
+            <p className="text-xs text-gray-500 mt-3 leading-relaxed">
+              <span className="text-gray-400">APIs (same-origin):</span>{" "}
+              <code className="text-cyan-200/80">/api/health</code>,{" "}
+              <code className="text-cyan-200/80">/api/news</code>,{" "}
+              <code className="text-cyan-200/80">/api/prices</code>,{" "}
+              <code className="text-cyan-200/80">/api/predictions</code>,{" "}
+              <code className="text-cyan-200/80">/api/gossip</code>
+              <span className="text-gray-500">
+                {" "}
+                — Dashboard & Watchdog consume news/prices/predictions; Trader Desk layers flows and bias; amber
+                means optional upstream keys or feeds can still limit depth.
+              </span>
+            </p>
           </div>
 
           {/* Quote */}
