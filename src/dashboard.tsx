@@ -1,7 +1,5 @@
 // src/dashboard.tsx
 import MarketSlots from "@/components/MarketSlots";
-// src/dashboard.tsx
-import { useState, useEffect } from "react";
 import EquitiesCommoditiesPanel from "@/components/EquitiesCommoditiesPanel";
 
 import EthPrice from "@/lib/eth";
@@ -193,12 +191,34 @@ function usePredictionStats() {
 }
 
 export default function Dashboard() {
-  useEffect(() => { window.scrollTo(0, 0); }, []);
   const [guruTopic, setGuruTopic] = useState<string | undefined>(undefined);
   const pulse = useMarketPulse();
   const breaking = useBreakingPulse();
   const stats = usePredictionStats();
   const topTheme = useTopWatchdogTheme();
+
+  useEffect(() => {
+    const prev = history.scrollRestoration;
+    history.scrollRestoration = "manual";
+    window.scrollTo(0, 0);
+    return () => {
+      history.scrollRestoration = prev;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!breaking.loaded) return;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        window.scrollTo(0, 0);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [breaking.loaded]);
   const intensityCfg = pulse
     ? pulse.intensity <= 2 ? { label: "Quiet", color: "text-amber-400" }
     : pulse.intensity <= 5 ? { label: "Active", color: "text-green-400" }
@@ -213,8 +233,11 @@ export default function Dashboard() {
           Sentotrade Dashboard
         </h1>
 
-        {/* MARKET PULSE HERO */}
-        <section className="w-full mb-8 rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-slate-900 to-black p-6 shadow-lg shadow-cyan-500/5">
+        {/* MARKET PULSE HERO — overflow-anchor mitigates scroll jump when Breaking Pulse height changes */}
+        <section
+          className="w-full mb-8 rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-slate-900 to-black p-6 shadow-lg shadow-cyan-500/5"
+          style={{ overflowAnchor: "none" }}
+        >
           <BreakingPulseStrip row={breaking.row} loaded={breaking.loaded} />
 
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
@@ -411,9 +434,13 @@ function BreakingPulseStrip({ row, loaded }: { row: BreakingPulsePred | null; lo
 
   if (!loaded) {
     return (
-      <div className="mb-5 rounded-xl border border-slate-700/40 bg-black/25 px-4 py-3 min-h-[5.5rem]" aria-hidden>
+      <div
+        className="mb-5 rounded-xl border border-slate-700/40 bg-black/25 px-4 py-3 min-h-[14rem] sm:min-h-[13rem] flex flex-col justify-center"
+        aria-hidden
+      >
         <div className="h-3 w-40 bg-slate-700/50 rounded animate-pulse mb-2" />
-        <div className="h-3 w-full max-w-md bg-slate-700/30 rounded animate-pulse" />
+        <div className="h-3 w-full max-w-md bg-slate-700/30 rounded animate-pulse mb-2" />
+        <div className="h-3 w-2/3 max-w-sm bg-slate-700/20 rounded animate-pulse" />
       </div>
     );
   }
