@@ -21,10 +21,11 @@ import GuruDrawer from "@/components/GuruDrawer";
 import NavBar from "@/components/NavBar";
 import { buildThemes, type WatchdogTheme } from "@/lib/watchdogThemes";
 
-/** Latest row from `/api/predictions` — FastGossip lane + Step 20a price-shock. */
+/** Latest row from `/api/predictions` — FastGossip lane + Step 20a price-shock + Step 24b catalyst-watch. */
 interface BreakingPulsePred {
   id?: string;
   source?: string;
+  cluster?: string;
   why?: string;
   time?: string;
   asset?: string;
@@ -50,8 +51,23 @@ function isPriceShockRow(p: BreakingPulsePred): boolean {
   return false;
 }
 
+function isCatalystWatchRow(p: BreakingPulsePred): boolean {
+  if (String(p.source || "").toLowerCase() === "catalyst-watch") return true;
+  const id = String(p.id || "");
+  if (id.toLowerCase().startsWith("cw_")) return true;
+  return false;
+}
+
 function isBreakingPulseRow(p: BreakingPulsePred): boolean {
-  return isFastPulseRow(p) || isPriceShockRow(p);
+  return isFastPulseRow(p) || isPriceShockRow(p) || isCatalystWatchRow(p);
+}
+
+function catalystWatchThemeLabel(row: BreakingPulsePred): string {
+  const c = String(row.cluster || "").toLowerCase();
+  if (c === "musk_intel") return "Musk / Tesla / Intel";
+  if (c === "fed_pivot") return "Fed policy / yields / inflation";
+  if (c === "us_china_trade") return "US–China trade & export controls";
+  return "Macro / catalyst headlines";
 }
 
 /** Text after `Fast gossip (intensity N):` in `why`, else full why trimmed. */
@@ -88,7 +104,7 @@ function useBreakingPulse() {
     let alive = true;
     async function load() {
       try {
-        const r = await fetch("/api/predictions?limit=30", { cache: "no-store" });
+        const r = await fetch("/api/predictions?limit=50", { cache: "no-store" });
         const d = await r.json();
         const items: BreakingPulsePred[] = Array.isArray(d.items) ? d.items : [];
         const hit = items.find(isBreakingPulseRow) ?? null;
@@ -377,6 +393,7 @@ function pulseStripHot(row: BreakingPulsePred | null): boolean {
     if (sev === "severe") return ageMin < 30;
     return ageMin < 15;
   }
+  if (isCatalystWatchRow(row)) return ageMin < 45;
   return ageMin < 5;
 }
 
@@ -427,6 +444,25 @@ function BreakingPulseStrip({ row, loaded }: { row: BreakingPulsePred | null; lo
         ) : null}
         <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
           Short-window gross market-move test before spread, slippage, fees, and platform costs.
+        </p>
+      </div>
+    );
+  }
+
+  if (isCatalystWatchRow(row)) {
+    const theme = catalystWatchThemeLabel(row);
+    const assetU = String(row.asset || "—").toUpperCase().trim() || "—";
+    const title = `⚠️ SPECULATIVE CATALYST WATCH — ${assetU}`;
+    const border = isHot ? "border-amber-500/50 bg-amber-950/20" : "border-slate-600/60 bg-slate-900/40";
+    return (
+      <div className={`mb-5 rounded-xl border px-4 py-3 ${border}`}>
+        <div className={`text-xs font-bold uppercase tracking-wide ${isHot ? "text-amber-200" : "text-amber-100/85"}`}>{title}</div>
+        <p className="text-sm text-slate-100 mt-1.5 font-medium">
+          {theme} · {windowLabel} · {rel}
+        </p>
+        <p className="text-sm text-slate-300 mt-2 leading-snug">No confirmed deal — awareness only.</p>
+        <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+          Speculative headline cluster — not a trade signal or Live Edge Test.
         </p>
       </div>
     );

@@ -78,6 +78,9 @@ const Landing = () => {
             Most Popular
           </span>
           <h2 className="text-xl font-bold mb-1 text-cyan-300 pt-1">Founder Beta Trial — $3 / 24h</h2>
+          <p className="mb-2 text-sm text-gray-200 leading-snug">
+            A small beta access pass to support live data checks, server use, and alert delivery.
+          </p>
           <p className="mb-3 text-sm text-cyan-200/80 font-medium">Full access to the radar.</p>
           <ul className="text-sm text-gray-200 mb-4 space-y-2 flex-1">
             <li>✓ Breaking Pulse</li>
