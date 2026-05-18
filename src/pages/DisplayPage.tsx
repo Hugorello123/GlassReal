@@ -7,6 +7,8 @@ const LS_DEVICE = "sento_display_device_id";
 const LS_TRIAL_START = "sento_display_trial_started";
 const LS_PRO_ACTIVE = "sento_display_pro_active";
 const SWEEP_MS = 60_000;
+/** Fresh catalyst callout in Breaking pulse (ribbon still lists all clusters). */
+const ACTIVE_CATALYST_FRESH_MS = 15 * 60 * 1000;
 
 type PredRow = {
   id?: string;
@@ -339,7 +341,15 @@ export default function DisplayPage() {
     return out.slice(0, 4);
   }, [predictions]);
 
-  /** Pulse strip: price-shock + fast gossip only — catalyst lives in the ribbon above. */
+  /** Newest cluster only, if last fire within 15m — one “Active catalyst” strip in Breaking pulse. */
+  const activeCatalystFresh = useMemo(() => {
+    const g = catalystGroups[0];
+    if (!g || !g._ts) return null;
+    if (Date.now() - g._ts > ACTIVE_CATALYST_FRESH_MS) return null;
+    return g;
+  }, [catalystGroups]);
+
+  /** Pulse strip: price-shock + fast gossip; fresh catalyst also gets a single highlight card below. */
   const pulseRows = useMemo(() => {
     return predictions
       .filter((r) => isPriceShockRow(r) || isFastPulseRow(r))
@@ -372,9 +382,9 @@ export default function DisplayPage() {
     <div
       className="relative min-h-0 h-[100dvh] w-full overflow-hidden text-slate-100 flex flex-col bg-[#070809]"
     >
-      {/* Masks global VoiceAvatar (fixed top-20 left-4 z-50) — TV artifact removal; blocks stray UI on this route only */}
+      {/* Masks global VoiceAvatar (fixed top-20 left-4 z-50, w-10 h-10 rounded-full) — match size/shape to avoid edge halo */}
       <div
-        className="fixed top-20 left-4 z-[100] h-11 w-11 rounded-md bg-[#070809] border border-white/[0.04] pointer-events-auto shadow-none"
+        className="fixed top-20 left-4 z-[100] h-10 w-10 rounded-full bg-[#070809] ring-1 ring-black/60 pointer-events-auto"
         aria-hidden
         title=""
       />
@@ -447,11 +457,12 @@ export default function DisplayPage() {
           <div className="mb-3 flex shrink-0 items-end justify-between gap-3 border-b border-white/[0.06] pb-2">
             <div>
               <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-cyan-300/80">Gossip intensity</div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-5xl font-black tabular-nums leading-none text-white lg:text-6xl">
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <span className="text-5xl font-black tabular-nums leading-none tracking-tight text-white lg:text-6xl">
                   {gossip ? gossip.intensity : "—"}
                 </span>
-                <span className="pb-1 text-2xl font-semibold text-slate-500">/10</span>
+                <span className="text-3xl font-bold tabular-nums leading-none text-slate-500 lg:text-4xl">/</span>
+                <span className="text-3xl font-bold tabular-nums leading-none text-slate-500 lg:text-4xl">10</span>
               </div>
             </div>
             <div className="text-right text-xs leading-tight text-slate-500">
@@ -494,7 +505,7 @@ export default function DisplayPage() {
             )}
           </div>
 
-          <div className="min-h-0 shrink-0 overflow-hidden border-t border-white/[0.06] py-2">
+          <div className="min-h-0 max-h-[32vh] shrink-0 overflow-y-auto overflow-x-hidden border-t border-white/[0.06] py-2 lg:max-h-none lg:overflow-hidden">
             <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Headlines</div>
             {newsHeadlines.length === 0 ? (
               <p className="mt-1 text-base text-slate-500">Watching — none right now.</p>
@@ -509,12 +520,21 @@ export default function DisplayPage() {
             )}
           </div>
 
-          <div className="mt-auto min-h-0 flex-1 overflow-hidden border-t border-white/[0.06] pt-2">
+          <div className="mt-auto flex min-h-0 flex-1 flex-col overflow-hidden border-t border-white/[0.06] pt-2">
             <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-orange-300/80">Breaking pulse</div>
+            {activeCatalystFresh && (
+              <div className="mt-2 shrink-0 rounded-lg border border-amber-400/35 bg-amber-950/30 px-3 py-2">
+                <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">Active catalyst</div>
+                <div className="mt-0.5 text-lg font-bold leading-tight text-amber-50">{activeCatalystFresh.assets}</div>
+                <div className="text-sm text-slate-300">
+                  {activeCatalystFresh.theme} · {activeCatalystFresh.window} · {activeCatalystFresh.rel}
+                </div>
+              </div>
+            )}
             {pulseRows.length === 0 ? (
-              <p className="mt-1 text-base text-slate-500">Watching — no price-shock or fast-gossip rows.</p>
+              <p className="mt-2 text-base text-slate-500">Watching — no price-shock or fast-gossip rows.</p>
             ) : (
-              <ul className="mt-2 space-y-2 overflow-hidden">
+              <ul className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden lg:overflow-hidden">
                 {pulseRows.map((r) => (
                   <li
                     key={r.id || `${r.source}-${r.time}`}
@@ -540,7 +560,7 @@ export default function DisplayPage() {
       {/* Full-width ticker */}
       <div className="relative z-10 shrink-0 border-t border-cyan-500/20 bg-black/60 py-3 text-center">
         <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">AI / Semiconductors</div>
-        <div className="mt-1 text-xl font-semibold tracking-[0.12em] text-cyan-200 md:text-2xl">
+        <div className="mt-1 text-2xl font-bold tracking-[0.14em] text-cyan-200 md:text-3xl">
           NVDA · INTC · TSM · AVGO · MU · SMCI · SOUN
         </div>
       </div>
