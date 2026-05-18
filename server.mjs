@@ -725,12 +725,39 @@ function decodeSocialPulseXmlText(s) {
     .trim();
 }
 
-function parseRedditRssItems(xml) {
+/** Reddit `.rss` URLs return Atom `<entry>` (not RSS `<item>`). Parse Atom first, then RSS 2.0 fallback. */
+function parseRedditFeedItems(xml) {
   const items = [];
   if (!xml || typeof xml !== "string") return items;
-  const re = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
+
+  const entryRe = /<entry\b[^>]*>([\s\S]*?)<\/entry>/gi;
   let m;
-  while ((m = re.exec(xml))) {
+  while ((m = entryRe.exec(xml))) {
+    const block = m[1];
+    const titleRaw = block.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "";
+    let url = "";
+    const linkTags = block.matchAll(/<link\b[^>]*>/gi);
+    for (const lm of linkTags) {
+      const tag = lm[0];
+      const hrefM = tag.match(/\bhref=["']([^"']+)["']/i);
+      if (!hrefM) continue;
+      const h = decodeSocialPulseXmlText(hrefM[1]);
+      if (h.includes("/comments/") && h.includes("reddit.com")) {
+        url = h;
+        break;
+      }
+    }
+    if (!url) {
+      const hrefM = block.match(/<link[^>]+href=["']([^"']+)["'][^>]*\/?>/i);
+      if (hrefM) url = decodeSocialPulseXmlText(hrefM[1]);
+    }
+    const title = decodeSocialPulseXmlText(titleRaw);
+    if (title && url) items.push({ title, url });
+  }
+  if (items.length) return items;
+
+  const itemRe = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
+  while ((m = itemRe.exec(xml))) {
     const block = m[1];
     const titleRaw = block.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "";
     const linkRaw =
@@ -809,7 +836,7 @@ async function refreshSocialPulseCache() {
     SOCIAL_PULSE_RSS_FEEDS.map(async (feed) => {
       try {
         const xml = await fetchSocialPulseRssText(feed.url);
-        const parsed = parseRedditRssItems(xml);
+        const parsed = parseRedditFeedItems(xml);
         for (const row of parsed.slice(0, 15)) {
           all.push({ subreddit: feed.subreddit, title: row.title, url: row.url });
         }
