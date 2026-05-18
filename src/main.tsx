@@ -16,6 +16,7 @@ import ProHubPage from "./pages/ProHubPage";
 import ProDashboardPage from "./pages/ProDashboardPage";
 import IndicesPage from "./pages/IndicesPage";
 import PredictionsPage from "./pages/PredictionsPage";
+import DisplayPage from "./pages/DisplayPage";
 import StatsPage from "./pages/StatsPage";
 import TutorPage from "./pages/TutorPage";
 import VoiceAvatar from "./components/VoiceAvatar";
@@ -37,6 +38,7 @@ createRoot(document.getElementById("root")!).render(
         <Route path="/pro" element={<ProDashboardPage />} />
         <Route path="/indices" element={<IndicesPage />} />
         <Route path="/predictions" element={<PredictionsPage />} />
+        <Route path="/display" element={<DisplayPage />} />
         {/* Stats: Live Edge Tests scorecard (reads /api/predictions) */}
         <Route path="/stats" element={<StatsPage />} />
         <Route path="/tutor" element={<TutorPage />} />
