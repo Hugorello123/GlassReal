@@ -1,7 +1,7 @@
 import "./patches/killFmp";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { HashRouter, Routes, Route } from "react-router";
+import { HashRouter, Routes, Route, useLocation } from "react-router";
 import "./index.css";
 
 import Landing from "./landing";
@@ -20,6 +20,13 @@ import DisplayPage from "./pages/DisplayPage";
 import StatsPage from "./pages/StatsPage";
 import TutorPage from "./pages/TutorPage";
 import VoiceAvatar from "./components/VoiceAvatar";
+
+function RoutedVoiceAvatar() {
+  const location = useLocation();
+  if (location.pathname === "/display") return null;
+  return <VoiceAvatar />;
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <HashRouter>
@@ -44,7 +51,7 @@ createRoot(document.getElementById("root")!).render(
         <Route path="/tutor" element={<TutorPage />} />
         <Route path="*" element={<Landing />} />
       </Routes>
-      <VoiceAvatar />
+      <RoutedVoiceAvatar />
     </HashRouter>
   </StrictMode>,
 );

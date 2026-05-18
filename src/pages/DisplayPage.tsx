@@ -9,7 +9,8 @@ const LS_TRIAL_START = "sento_display_trial_started";
 const LS_PRO_ACTIVE = "sento_display_pro_active";
 const SWEEP_MS = 60_000;
 const TV_ROTATE_MS = 60_000;
-const ACTIVE_CATALYST_FRESH_MS = 15 * 60 * 1000;
+/** Wall / TV: cycle wire headlines — no mouse scroll. */
+const NEWS_WIRE_ROTATE_MS = 12_000;
 
 type PredRow = {
   id?: string;
@@ -94,13 +95,6 @@ function catalystWatchThemeLabel(row: PredRow): string {
   return "Macro / catalyst headlines";
 }
 
-function parseFastGossipHeadline(why: string | undefined): string {
-  const w = String(why || "");
-  const m = w.match(/Fast gossip\s*\(\s*intensity\s*\d+\s*\)\s*:\s*(.*)/i);
-  const tail = (m?.[1] ?? "").trim();
-  return tail || w.trim();
-}
-
 function ageMinutesFromIso(iso: string | undefined): number | null {
   if (!iso) return null;
   const t = Date.parse(iso);
@@ -120,14 +114,16 @@ function formatRelativePulse(iso: string | undefined): string {
   return `${Math.round(mins / 1440)}d ago`;
 }
 
-function pulseWhyLine(p: PredRow): string {
-  if (isPriceShockRow(p)) {
-    const w = String(p.why || "").trim();
-    const pm = Number(p.shockMovePct);
-    if (Number.isFinite(pm)) return `Shock ≈ ${Math.abs(pm).toFixed(2)}% vs model threshold.`;
-    return w || "Price dislocation flagged on the feed.";
-  }
-  return parseFastGossipHeadline(p.why) || "Headline velocity on fast gossip channel.";
+/** Wall-safe labels: avoid Long/Short trade wording on /display. */
+function mapPressureCallLabel(call: unknown): string {
+  const c = String(call ?? "")
+    .trim()
+    .toLowerCase();
+  if (c === "long") return "Upside pressure";
+  if (c === "short") return "Downside pressure";
+  if (c === "watch") return "Awareness watch";
+  const raw = String(call ?? "").trim();
+  return raw || "—";
 }
 
 function trimDisplayLine(s: string, max: number): string {
@@ -145,6 +141,16 @@ function isPlaceholderNewsArticles(articles: { title?: string }[]): boolean {
     t.includes("News temporarily unavailable") ||
     t.includes("No high-quality market headlines passed the relevance filter") ||
     t === "Loading..."
+  );
+}
+
+function isPlaceholderShockArticles(articles: { title?: string }[]): boolean {
+  if (!articles?.length) return true;
+  if (articles.length !== 1) return false;
+  const t = String(articles[0]?.title || "");
+  return (
+    t.includes("Global shock watch temporarily unavailable") ||
+    t.includes("No geopolitical shock headlines matched")
   );
 }
 
@@ -177,13 +183,6 @@ function chgBarClass(raw: unknown): string {
   return "bg-amber-500/80";
 }
 
-function gossipBand(n: number | null): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  if (n >= 7) return "High";
-  if (n >= 4) return "Medium";
-  return "Low";
-}
-
 function buildMarketReadTwoLines(input: {
   intensity: number | null;
   topCluster: string | null;
@@ -204,6 +203,20 @@ function buildMarketReadTwoLines(input: {
     line2 = trimDisplayLine(`${topTheme} — cluster ${topCluster} active.`, 110);
   }
   return [trimDisplayLine(line1, 95), trimDisplayLine(line2, 95)];
+}
+
+/** Single header line: heat + gossip score + catalyst context (no long filler clauses). */
+function buildMarketWeatherOneLine(input: {
+  intensity: number | null;
+  topCluster: string | null;
+  topTheme: string | null;
+}): string {
+  const [l1, l2] = buildMarketReadTwoLines(input);
+  const l1c = l1
+    .replace(/\s*—\s*many concurrent threads\.?$/i, "")
+    .replace(/\s*—\s*routine scan band\.?$/i, "")
+    .replace(/\s+on the wire\.?$/i, "");
+  return trimDisplayLine(`${l1c} · ${l2}`, 200);
 }
 
 /** 24h path from last price + 24h % only — no extra HTTP. Stroke tuned for TV distance viewing. */
@@ -258,13 +271,12 @@ export default function DisplayPage() {
 
   const [clock, setClock] = useState(() => new Date());
   const [lifecycle, setLifecycle] = useState<DisplayLifecycle>("PRO_PREVIEW");
-  const [lastSweepAt, setLastSweepAt] = useState<number | null>(null);
-  const [tick, setTick] = useState(0);
 
   const [healthOk, setHealthOk] = useState<boolean | null>(null);
   const [prices, setPrices] = useState<PricesState>(null);
   const [predictions, setPredictions] = useState<PredRow[]>([]);
   const [newsArticles, setNewsArticles] = useState<{ title?: string; url?: string }[]>([]);
+  const [shockArticles, setShockArticles] = useState<{ title?: string; url?: string }[]>([]);
   const [gossip, setGossip] = useState<{
     intensity: number;
     spywords: string[];
@@ -273,6 +285,8 @@ export default function DisplayPage() {
   } | null>(null);
 
   const [tvSymbol, setTvSymbol] = useState<"FOREXCOM:XAUUSD" | "BINANCE:BTCUSDT">("FOREXCOM:XAUUSD");
+  const [newsWireIdx, setNewsWireIdx] = useState(0);
+  const [shockWireIdx, setShockWireIdx] = useState(0);
 
   const visualFree = useMemo(() => {
     if (tierParam === "free") return true;
@@ -316,11 +330,6 @@ export default function DisplayPage() {
   }, []);
 
   useEffect(() => {
-    const id = window.setInterval(() => setTick((x) => x + 1), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  useEffect(() => {
     const id = window.setInterval(() => {
       setTvSymbol((s) => (s === "FOREXCOM:XAUUSD" ? "BINANCE:BTCUSDT" : "FOREXCOM:XAUUSD"));
     }, TV_ROTATE_MS);
@@ -328,11 +337,11 @@ export default function DisplayPage() {
   }, []);
 
   const sweep = useCallback(async () => {
-    const t0 = Date.now();
-    const [hp, pp, np, gp] = await Promise.all([
+    const [hp, pp, np, nsh, gp] = await Promise.all([
       fetch(apiUrl("/api/health"), { cache: "no-store" }).catch(() => null),
       fetch(apiUrl("/api/prices"), { cache: "no-store" }).catch(() => null),
       fetch(apiUrl("/api/news"), { cache: "no-store" }).catch(() => null),
+      fetch(apiUrl("/api/news-shock"), { cache: "no-store" }).catch(() => null),
       fetch(apiUrl("/api/gossip"), { cache: "no-store" }).catch(() => null),
     ]);
     const predP = await fetch(apiUrl("/api/predictions?limit=50"), { cache: "no-store" }).catch(() => null);
@@ -373,6 +382,15 @@ export default function DisplayPage() {
       }
     } else setNewsArticles([]);
 
+    if (nsh?.ok) {
+      try {
+        const j = await nsh.json();
+        setShockArticles(Array.isArray(j.articles) ? j.articles : []);
+      } catch {
+        setShockArticles([]);
+      }
+    } else setShockArticles([]);
+
     if (gp?.ok) {
       try {
         const j = await gp.json();
@@ -386,8 +404,6 @@ export default function DisplayPage() {
         setGossip(null);
       }
     } else setGossip(null);
-
-    setLastSweepAt(t0);
   }, []);
 
   useEffect(() => {
@@ -395,21 +411,6 @@ export default function DisplayPage() {
     const id = window.setInterval(() => void sweep(), SWEEP_MS);
     return () => window.clearInterval(id);
   }, [sweep]);
-
-  const lastSweepLabel = useMemo(() => {
-    if (!lastSweepAt) return "watching";
-    const sec = Math.max(0, Math.floor((Date.now() - lastSweepAt) / 1000));
-    if (sec < 5) return "just now";
-    if (sec < 60) return `${sec}s ago`;
-    return `${Math.floor(sec / 60)}m ago`;
-  }, [lastSweepAt, tick]);
-
-  const nextSweepSec = useMemo(() => {
-    if (!lastSweepAt) return null;
-    const elapsed = Date.now() - lastSweepAt;
-    const rem = SWEEP_MS - (elapsed % SWEEP_MS);
-    return Math.max(0, Math.ceil(rem / 1000));
-  }, [lastSweepAt, tick]);
 
   const catalystGroups = useMemo((): CatalystGroup[] => {
     const rows = predictions.filter(isCatalystWatchRow);
@@ -439,19 +440,15 @@ export default function DisplayPage() {
     return out.slice(0, 4);
   }, [predictions]);
 
-  const activeCatalystFresh = useMemo(() => {
-    const g = catalystGroups[0];
-    if (!g || !g._ts) return null;
-    if (Date.now() - g._ts > ACTIVE_CATALYST_FRESH_MS) return null;
-    return g;
-  }, [catalystGroups]);
-
-  const pulseRows = useMemo(() => {
+  const pulseRowsThree = useMemo(() => {
     return predictions
       .filter((r) => isPriceShockRow(r) || isFastPulseRow(r))
       .sort((a, b) => (Date.parse(String(b.time || "")) || 0) - (Date.parse(String(a.time || "")) || 0))
-      .slice(0, isProBoardroom ? 4 : 5);
-  }, [predictions, isProBoardroom]);
+      .slice(0, 3);
+  }, [predictions]);
+
+  const pressureRowsVisible = pulseRowsThree.slice(0, 2);
+  const pressureMoreCount = Math.max(0, pulseRowsThree.length - pressureRowsVisible.length);
 
   const p = prices && typeof prices === "object" ? prices : null;
   const spotDefs = [
@@ -461,23 +458,72 @@ export default function DisplayPage() {
     { key: "eth", label: "ETH", sub: "USD", raw: p?.eth, rawCh: p?.ethCh },
   ] as const;
 
-  const headlineFive = useMemo(() => {
+  const headlineThree = useMemo(() => {
     if (!newsArticles.length || isPlaceholderNewsArticles(newsArticles)) return [];
     return newsArticles
-      .slice(0, 5)
-      .map((a) => trimDisplayLine(String(a.title || "").trim(), 160))
+      .slice(0, 3)
+      .map((a) => trimDisplayLine(String(a.title || "").trim(), 240))
       .filter(Boolean);
   }, [newsArticles]);
 
-  const [readL1, readL2] = useMemo(
+  const shockHeadlineThree = useMemo(() => {
+    if (!shockArticles.length || isPlaceholderShockArticles(shockArticles)) return [];
+    return shockArticles
+      .slice(0, 3)
+      .map((a) => trimDisplayLine(String(a.title || "").trim(), 240))
+      .filter(Boolean);
+  }, [shockArticles]);
+
+  useEffect(() => {
+    setNewsWireIdx(0);
+  }, [headlineThree]);
+
+  useEffect(() => {
+    setShockWireIdx(0);
+  }, [shockHeadlineThree]);
+
+  useEffect(() => {
+    if (headlineThree.length <= 1) return;
+    const id = window.setInterval(() => {
+      setNewsWireIdx((i) => (i + 1) % headlineThree.length);
+    }, NEWS_WIRE_ROTATE_MS);
+    return () => window.clearInterval(id);
+  }, [headlineThree]);
+
+  useEffect(() => {
+    if (shockHeadlineThree.length <= 1) return;
+    const id = window.setInterval(() => {
+      setShockWireIdx((i) => (i + 1) % shockHeadlineThree.length);
+    }, NEWS_WIRE_ROTATE_MS);
+    return () => window.clearInterval(id);
+  }, [shockHeadlineThree]);
+
+  const weatherOneLine = useMemo(
     () =>
-      buildMarketReadTwoLines({
+      buildMarketWeatherOneLine({
         intensity: gossip?.intensity ?? null,
         topCluster: catalystGroups[0]?.cluster ?? null,
         topTheme: catalystGroups[0]?.theme ?? null,
       }),
     [gossip?.intensity, catalystGroups],
   );
+
+  const catalystWatchStripText = useMemo(() => {
+    if (!catalystGroups.length) return "No highlighted cluster on this sweep.";
+    const segments: string[] = [];
+    for (const g of catalystGroups) {
+      const c = String(g.cluster || "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, "_");
+      if (c) segments.push(c);
+      for (const tok of g.assets.split("·")) {
+        const t = tok.trim();
+        if (t) segments.push(t);
+      }
+    }
+    return segments.join(" · ");
+  }, [catalystGroups]);
 
   /** Only NVDA/INTC have live % on /api/prices today; others stay "—" until wired on the server. */
   const hotSectorRows = useMemo(() => {
@@ -488,7 +534,6 @@ export default function DisplayPage() {
       ["AVGO", null],
       ["MU", null],
       ["SMCI", null],
-      ["SOUN", null],
     ] as const;
     const liveKeys = new Set(["nvda", "intc"]);
     const pr = p && typeof p === "object" ? (p as Record<string, unknown>) : null;
@@ -507,150 +552,172 @@ export default function DisplayPage() {
   const statusColor =
     healthOk === true ? "bg-emerald-500" : healthOk === false ? "bg-amber-500" : "bg-slate-500";
 
-  const narrativeBlock = (
-    <div className="flex min-h-0 flex-col gap-3 overflow-y-auto overflow-x-hidden pr-1">
-      <div className="shrink-0 border-b border-white/[0.06] pb-3">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-400/90">The narrative engine</div>
-            <p className="mt-2 text-lg font-semibold leading-snug text-white md:text-xl">
-              Gossip intensity: {gossip ? `${gossip.intensity}/10` : "—"}{" "}
-              <span className="text-slate-500">({gossipBand(gossip?.intensity ?? null)})</span>
-            </p>
-            <p className="mt-1 text-base text-slate-300 md:text-lg">
-              Theme:{" "}
-              <span className="font-semibold text-amber-100/95">
-                {catalystGroups[0]?.theme ?? "No dominant theme on this sweep."}
-              </span>
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              Sweep {lastSweepLabel}
-              {nextSweepSec != null ? ` · Next in ${nextSweepSec}s` : ""}
-            </p>
-          </div>
-          <div className="shrink-0 rounded-md border border-white/[0.07] bg-white/[0.03] px-3 py-2 lg:max-w-[13rem] lg:text-right">
-            <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-600">Active assets</div>
-            <p className="mt-1 text-[11px] leading-snug text-slate-400">Gold · BTC · ETH · WTI</p>
-            <div className="mt-2 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-600">Signal mode</div>
-            <p className="mt-1 text-[11px] leading-snug text-slate-400">Catalyst Watch · Price context · Headlines</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="shrink-0">
-        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-200/85">Catalyst watch</div>
-        {catalystGroups.length === 0 ? (
-          <p className="mt-1 text-sm text-slate-500">Watching — none on this sweep.</p>
-        ) : (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {catalystGroups.map((g) => (
-              <div
-                key={g.cluster}
-                className="max-w-full rounded-md border border-amber-500/35 bg-amber-950/30 px-2.5 py-1.5 text-xs text-amber-50"
-              >
-                <span className="font-mono text-[10px] uppercase tracking-wider text-amber-400/90">{g.cluster}</span>
-                <span className="mx-1.5 text-slate-600">·</span>
-                <span className="font-semibold">{g.assets}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="min-h-0 shrink-0">
-        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Headlines</div>
-        {headlineFive.length === 0 ? (
-          <p className="mt-2 text-base text-slate-500">Watching — none right now.</p>
-        ) : (
-          <ol className="mt-2 list-none space-y-2.5 pl-0">
-            {headlineFive.map((t, i) => (
-              <li key={i} className="flex gap-3 text-lg font-medium leading-snug text-slate-100 md:text-xl">
-                <span className="w-8 shrink-0 text-right font-mono text-base font-bold text-cyan-500/90">{i + 1}.</span>
-                <span className="min-w-0 line-clamp-2">{t}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
-
-      <div className="flex min-h-0 flex-1 flex-col border-t border-white/[0.06] pt-2">
-        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-300/90">Breaking pulse</div>
-        {activeCatalystFresh && (
-          <div className="mt-2 shrink-0 rounded-lg border border-amber-400/45 bg-amber-950/35 px-3 py-2.5">
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-200">Status · Active catalyst</div>
-            <div className="mt-1 text-lg font-bold text-amber-50">{activeCatalystFresh.assets}</div>
-            <div className="text-sm text-slate-300">
-              {activeCatalystFresh.theme} · {activeCatalystFresh.rel}
-            </div>
-          </div>
-        )}
-        {pulseRows.length === 0 ? (
-          <p className="mt-2 text-base text-slate-500">Watching — no price-shock or fast-gossip rows.</p>
-        ) : (
-          <ul className="mt-2 min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden">
-            {pulseRows.map((r) => {
-              const status = isPriceShockRow(r) ? "Price shock" : "Headline heat";
-              return (
-                <li
-                  key={r.id || `${r.source}-${r.time}`}
-                  className="rounded-xl border border-orange-400/30 border-l-[6px] border-l-orange-500 bg-gradient-to-r from-orange-950/55 to-black/50 px-4 py-4 shadow-[0_0_28px_-12px_rgba(249,115,22,0.28)]"
-                >
-                  <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-200/95">Status · {status}</div>
-                  <div className="mt-2 text-2xl font-bold leading-tight text-orange-50 md:text-3xl">
-                    {String(r.asset || "—")} · {String(r.call || "—")}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-400 md:text-base">
-                    {String(r.timeframe || r.horizon || "—")} · {formatRelativePulse(r.time)}
-                  </div>
-                  <p className="mt-2 text-base leading-snug text-slate-200 md:text-lg">{pulseWhyLine(r)}</p>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-
   const hotSectorsBlock = (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-cyan-500/35 bg-gradient-to-b from-cyan-950/40 via-[#0a1018] to-black/80 px-2 py-2 shadow-[0_0_36px_-12px_rgba(34,211,238,0.25),inset_0_1px_0_rgba(255,255,255,0.06)]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-cyan-500/35 bg-gradient-to-b from-cyan-950/40 via-[#0a1018] to-black/80 px-2 py-2.5 shadow-[0_0_36px_-12px_rgba(34,211,238,0.25),inset_0_1px_0_rgba(255,255,255,0.06)]">
+      <span className="sr-only">
+        Twenty-four hour percent from the sweep when the ticker is on the price feed: NVDA and INTC only. Other symbols are labels until wired.
+      </span>
       <div className="shrink-0 text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.45)]">
         Hot sectors
       </div>
       <div className="mt-0.5 shrink-0 text-[10px] font-bold uppercase tracking-[0.2em] text-violet-200/95 [text-shadow:0_0_14px_rgba(167,139,250,0.35)]">
         AI / Semiconductors
       </div>
-      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-2 gap-x-1.5 gap-y-1 auto-rows-min content-start text-center font-mono">
+      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-2 gap-x-1.5 gap-y-1 auto-rows-min content-start overflow-hidden text-center font-mono">
         {hotSectorRows.map((row, i) => {
-          const last = i === hotSectorRows.length - 1;
-          const oddCount = hotSectorRows.length % 2 === 1;
           const chStr = row.hasLiveCh ? fmtCh(row.chRaw) : null;
           return (
             <div
               key={row.sym}
               className={`flex min-h-0 flex-col items-center justify-center rounded-md border px-0.5 py-1 [text-shadow:0_0_10px_rgba(255,255,255,0.2)] ${
-                last && oddCount ? "col-span-2" : ""
-              } ${
                 i % 2 === 0
                   ? "border-cyan-400/45 bg-gradient-to-br from-cyan-900/50 via-slate-900/95 to-slate-950 shadow-[0_0_14px_-6px_rgba(34,211,238,0.4),inset_0_1px_0_rgba(255,255,255,0.1)]"
                   : "border-violet-400/40 bg-gradient-to-br from-violet-950/55 via-slate-900/95 to-slate-950 shadow-[0_0_14px_-6px_rgba(167,139,250,0.3),inset_0_1px_0_rgba(255,255,255,0.08)]"
               }`}
             >
-              <span className="text-[11px] font-black leading-none tracking-wide text-white md:text-xs">{row.sym}</span>
+              <span className="text-xs font-black leading-tight tracking-wide text-white">{row.sym}</span>
               {chStr ? (
-                <span className={`mt-0.5 text-[9px] font-bold leading-none tabular-nums md:text-[10px] ${chgToneClass(row.chRaw)}`}>
+                <span className={`mt-0.5 text-[10px] font-bold leading-tight tabular-nums md:text-xs ${chgToneClass(row.chRaw)}`}>
                   {chStr}
                 </span>
               ) : (
-                <span className="mt-0.5 text-[9px] font-semibold leading-none tabular-nums text-slate-500 md:text-[10px]">—</span>
+                <span className="mt-0.5 text-[10px] font-semibold leading-tight tabular-nums text-slate-500 md:text-xs">—</span>
               )}
             </div>
           );
         })}
       </div>
-      <p className="mt-auto shrink-0 pt-1 text-[8px] leading-tight text-slate-500">
-        24h % when ticker is on the price feed (NVDA, INTC). Others: context only.
-      </p>
+    </div>
+  );
+
+  const catalystWatchStripEl = (
+    <div className="flex min-h-[2.5rem] min-w-0 flex-1 items-center gap-2 rounded-lg border border-amber-500/35 bg-amber-950/25 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-400/90">Catalyst watch</span>
+      <div className="min-w-0 flex-1 overflow-x-auto">
+        <span className="inline-block whitespace-nowrap font-mono text-[11px] text-amber-50/95 md:text-xs">{catalystWatchStripText}</span>
+      </div>
+    </div>
+  );
+
+  const newsWireCard = (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-emerald-500/30 bg-black/50 p-3 shadow-inner">
+      <div className="flex min-h-0 min-w-0 flex-[2.1] flex-col overflow-hidden pb-2">
+        <div className="flex shrink-0 items-baseline justify-between gap-2">
+          <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300/90">News wire</div>
+          {headlineThree.length > 1 ? (
+            <div className="text-[10px] font-medium tabular-nums text-slate-500" aria-live="polite">
+              {newsWireIdx + 1} / {headlineThree.length} · auto
+            </div>
+          ) : null}
+        </div>
+        <div className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col justify-start overflow-hidden">
+          {headlineThree.length === 0 ? (
+            <p className="line-clamp-2 text-sm font-medium leading-snug text-slate-500">No headlines on this sweep.</p>
+          ) : (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-start overflow-hidden">
+              {headlineThree.length > 1 ? (
+                <div className="mb-1.5 flex shrink-0 justify-center gap-2" aria-hidden>
+                  {headlineThree.map((_, i) => (
+                    <span
+                      key={i}
+                      className={`h-1.5 w-1.5 rounded-full transition-colors duration-300 ${i === newsWireIdx ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]" : "bg-slate-600"}`}
+                    />
+                  ))}
+                </div>
+              ) : null}
+              <div key={newsWireIdx} className="min-w-0 flex-1 overflow-hidden">
+                <div className="font-mono text-xs font-bold text-emerald-400/90">{newsWireIdx + 1}.</div>
+                <p
+                  className="mt-1.5 line-clamp-3 min-h-0 break-words text-base font-semibold leading-normal text-slate-100 md:text-lg"
+                  aria-live="polite"
+                  title={headlineThree[newsWireIdx]}
+                >
+                  {headlineThree[newsWireIdx]}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex min-h-0 min-w-0 flex-[1] flex-col overflow-hidden border-t border-rose-500/25 pt-2">
+        <div className="flex shrink-0 items-baseline justify-between gap-2">
+          <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-rose-300/90">Global shock watch</div>
+          {shockHeadlineThree.length > 1 ? (
+            <div className="text-[10px] font-medium tabular-nums text-slate-500" aria-live="polite">
+              {shockWireIdx + 1} / {shockHeadlineThree.length} · auto
+            </div>
+          ) : null}
+        </div>
+        <div className="mt-1.5 flex min-h-0 min-w-0 flex-1 flex-col justify-start overflow-hidden pb-0.5">
+          {shockHeadlineThree.length === 0 ? (
+            <p className="line-clamp-2 text-xs font-medium leading-snug text-slate-500 md:text-sm">
+              {shockArticles.length && isPlaceholderShockArticles(shockArticles)
+                ? String(shockArticles[0]?.title || "—")
+                : "No geopolitical shock headlines on this sweep."}
+            </p>
+          ) : (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-start overflow-hidden">
+              {shockHeadlineThree.length > 1 ? (
+                <div className="mb-1.5 flex shrink-0 justify-center gap-2" aria-hidden>
+                  {shockHeadlineThree.map((_, i) => (
+                    <span
+                      key={i}
+                      className={`h-1.5 w-1.5 rounded-full transition-colors duration-300 ${i === shockWireIdx ? "bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.4)]" : "bg-slate-600"}`}
+                    />
+                  ))}
+                </div>
+              ) : null}
+              <div key={shockWireIdx} className="min-w-0 flex-1 overflow-hidden">
+                <div className="font-mono text-xs font-bold text-rose-400/90">{shockWireIdx + 1}.</div>
+                <p
+                  className="mt-1.5 line-clamp-2 min-h-0 break-words text-sm font-semibold leading-snug text-rose-50/95 md:text-base"
+                  aria-live="polite"
+                  title={shockHeadlineThree[shockWireIdx]}
+                >
+                  {shockHeadlineThree[shockWireIdx]}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const shocksCard = (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-orange-500/35 bg-gradient-to-b from-orange-950/40 to-black/80 p-2.5 shadow-[0_0_24px_-8px_rgba(249,115,22,0.2)]">
+      <div className="shrink-0 text-[10px] font-bold uppercase tracking-[0.22em] text-orange-200/95">Live Pressure Watch</div>
+      <div className="mt-1.5 flex min-h-0 flex-1 flex-col justify-center gap-1.5 overflow-hidden">
+        {pulseRowsThree.length === 0 ? (
+          <div className="space-y-1.5 overflow-hidden">
+            <p className="line-clamp-2 text-sm font-medium leading-snug text-slate-300">No active price shocks in this sweep.</p>
+            <p className="line-clamp-2 text-xs leading-snug text-slate-500">Market is being monitored for unusual moves.</p>
+          </div>
+        ) : (
+          <>
+            {pressureRowsVisible.map((r) => (
+              <div
+                key={r.id || `${r.source}-${r.time}`}
+                className="min-w-0 shrink-0 overflow-hidden rounded-md border border-orange-400/25 bg-black/35 px-2 py-1.5"
+              >
+                <div className="truncate text-sm font-bold leading-tight text-orange-50">
+                  {String(r.asset || "—")} · {mapPressureCallLabel(r.call)}
+                </div>
+                <div className="truncate text-[11px] leading-tight text-slate-400">
+                  {String(r.timeframe || r.horizon || "—")} · {formatRelativePulse(r.time)}
+                </div>
+                <p className="line-clamp-1 text-[10px] leading-tight text-slate-400">Move detected near model threshold.</p>
+              </div>
+            ))}
+            {pressureMoreCount > 0 ? (
+              <div className="shrink-0 pt-0.5 text-center text-[10px] font-medium tabular-nums text-slate-500">
+                +{pressureMoreCount} more monitored
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
     </div>
   );
 
@@ -693,10 +760,9 @@ export default function DisplayPage() {
             {isProBoardroom ? "Boardroom" : "Public"} · live sweep
           </span>
         </div>
-        <div className="max-w-[min(52vw,36rem)] min-w-0 justify-self-center text-center">
-          <div className="text-[9px] font-bold uppercase tracking-[0.28em] text-cyan-500/80">Current market weather</div>
-          <p className="mt-1 line-clamp-2 text-sm font-semibold leading-snug text-slate-100 md:text-base">
-            {readL1} <span className="text-slate-600">·</span> {readL2}
+        <div className="max-w-[min(78vw,52rem)] min-w-0 justify-self-center px-2 text-center">
+          <p className="line-clamp-2 text-sm font-semibold leading-snug text-slate-100 md:text-base">
+            {weatherOneLine}
           </p>
         </div>
         <div className="flex items-center justify-end gap-3 justify-self-end tabular-nums">
@@ -728,18 +794,22 @@ export default function DisplayPage() {
             ))}
           </div>
         </section>
-        {narrativeBlock}
-        {hotSectorsBlock}
-        <div className="min-h-[280px] shrink-0">{chartBlock}</div>
+        {catalystWatchStripEl}
+        <div className="grid min-h-0 shrink-0 grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-2">
+          <div className="flex h-full min-h-[11rem] min-w-0 flex-col overflow-hidden sm:min-h-[12rem]">{hotSectorsBlock}</div>
+          <div className="flex h-full min-h-[11rem] min-w-0 flex-col overflow-hidden sm:min-h-[12rem]">{newsWireCard}</div>
+          <div className="flex h-full min-h-[11rem] min-w-0 flex-col overflow-hidden sm:min-h-[12rem]">{shocksCard}</div>
+        </div>
+        <div className="min-h-[260px] shrink-0 flex-1">{chartBlock}</div>
       </div>
 
-      {/* Desktop: 3-column + chart row */}
+      {/* Desktop: spots + strip + 3 cards + chart */}
       <div
-        className="relative z-10 hidden min-h-0 flex-1 gap-4 overflow-hidden px-4 pb-3 pt-3 md:px-5 lg:grid"
+        className="relative z-10 hidden min-h-0 flex-1 gap-3 overflow-hidden px-4 pb-3 pt-3 md:px-5 lg:grid"
         style={{
-          gridTemplateAreas: `"spots narrative hot" "spots chart chart"`,
-          gridTemplateColumns: "minmax(260px, 1.05fr) minmax(0, 1.85fr) minmax(200px, 0.82fr)",
-          gridTemplateRows: "minmax(0, 1fr) minmax(300px, 46vh)",
+          gridTemplateAreas: `"spots strip strip strip" "spots hot news shocks" "spots chart chart chart"`,
+          gridTemplateColumns: "minmax(248px, 0.95fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)",
+          gridTemplateRows: "auto minmax(0, 1fr) minmax(260px, 44vh)",
         }}
       >
         <section
@@ -765,15 +835,18 @@ export default function DisplayPage() {
           </div>
         </section>
 
-        <div
-          className="min-h-0 overflow-hidden rounded-xl border border-cyan-500/20 bg-black/45 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
-          style={{ gridArea: "narrative" }}
-        >
-          {narrativeBlock}
+        <div className="flex min-h-0 min-w-0 items-stretch" style={{ gridArea: "strip" }}>
+          {catalystWatchStripEl}
         </div>
 
-        <div className="flex min-h-0 flex-col overflow-hidden" style={{ gridArea: "hot" }}>
+        <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" style={{ gridArea: "hot" }}>
           {hotSectorsBlock}
+        </div>
+        <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" style={{ gridArea: "news" }}>
+          {newsWireCard}
+        </div>
+        <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" style={{ gridArea: "shocks" }}>
+          {shocksCard}
         </div>
 
         <div className="min-h-0 overflow-hidden" style={{ gridArea: "chart" }}>

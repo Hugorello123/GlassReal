@@ -221,6 +221,10 @@ function logStat(cat, data) {
 let newsCache = { articles: [{ title: "Loading...", url: "#" }], ts: 0 };
 const NEWS_CACHE_MS = 300000; // 5 minutes
 let newsQueryOffset = 0;
+let shockNewsCache = { articles: [{ title: "Loading...", url: "#" }], ts: 0 };
+let shockQueryOffset = 0;
+/** Last successful global-shock fetch (not placeholder). */
+let LAST_GOOD_SHOCK_ARTICLES = null;
 let NEWS_BACKOFF_UNTIL = 0;
 /** Real headline rows from last successful relevance-filtered fetch (not placeholder). */
 let LAST_GOOD_NEWS_ARTICLES = null;
@@ -292,6 +296,21 @@ const NEWS_Q_STRIPS = [
 ];
 for (const _nq of NEWS_Q_STRIPS) {
   if (_nq.length > 100) console.error("[News] FATAL: query strip >100 chars:", _nq.length);
+}
+
+/** Second NewsData lane: geopolitical / supply risk — no isMarketRelevantHeadline filter. */
+const SHOCK_Q_STRIPS = [
+  "Strait of Hormuz OR Iran OR Persian Gulf OR tanker",
+  "Red Sea OR Suez OR Houthis OR maritime security",
+  "Taiwan OR Taiwan Strait OR blockade OR PLA drills",
+  "NATO OR Ukraine OR Zaporizhzhia OR nuclear plant",
+  "missile strike OR cruise missile OR air raid OR drones",
+  "sanctions OR cyberattack OR banking outage OR SWIFT",
+  "Gaza OR Lebanon OR Israel OR Middle East conflict",
+  "North Korea OR ballistic missile OR Korean peninsula",
+];
+for (const _sq of SHOCK_Q_STRIPS) {
+  if (_sq.length > 100) console.error("[NewsShock] FATAL: query strip >100 chars:", _sq.length);
 }
 
 function escapeReToken(s) {
@@ -399,6 +418,27 @@ function isPlaceholderNewsArticles(articles) {
     t.includes("News temporarily unavailable") ||
     t.includes("No high-quality market headlines passed the relevance filter") ||
     t === "Loading..."
+  );
+}
+
+function shockNewsPlaceholderArticles(anyHttpOk) {
+  return [
+    {
+      title: anyHttpOk
+        ? "No geopolitical shock headlines matched this sweep."
+        : "Global shock watch temporarily unavailable.",
+      url: "#",
+    },
+  ];
+}
+
+function isPlaceholderShockArticles(articles) {
+  if (!articles || !articles.length) return true;
+  if (articles.length !== 1) return false;
+  const t = String(articles[0]?.title || "");
+  return (
+    t.includes("Global shock watch temporarily unavailable") ||
+    t.includes("No geopolitical shock headlines matched")
   );
 }
 
@@ -680,6 +720,105 @@ async function fetchNewsWithCache() {
 
   newsCache = { articles, ts: now };
   logStat("news", { count: articles.length, cached: false, rawMerged: rawMergedCount, saw429, strips: batchSize });
+  return articles;
+}
+
+async function fetchShockNewsWithCache() {
+  const now = Date.now();
+  if (now - shockNewsCache.ts < NEWS_CACHE_MS) {
+    console.log("[NewsShock] Serving cache, age:", Math.round((now - shockNewsCache.ts) / 1000), "s");
+    return shockNewsCache.articles;
+  }
+  if (now < NEWS_BACKOFF_UNTIL) {
+    console.log("[NewsShock] Backoff active until", new Date(NEWS_BACKOFF_UNTIL).toISOString());
+    let articles =
+      LAST_GOOD_SHOCK_ARTICLES && LAST_GOOD_SHOCK_ARTICLES.length
+        ? LAST_GOOD_SHOCK_ARTICLES.slice()
+        : !isPlaceholderShockArticles(shockNewsCache.articles)
+          ? shockNewsCache.articles.slice()
+          : null;
+    if (articles && articles.length) {
+      console.log("[NewsShock] Using last good articles", articles.length, "(backoff, no upstream fetch)");
+    } else {
+      articles = shockNewsPlaceholderArticles(false);
+    }
+    shockNewsCache = { articles, ts: now };
+    return articles;
+  }
+
+  const n = SHOCK_Q_STRIPS.length;
+  const batchSize = 3;
+  const start = shockQueryOffset % n;
+  const strips = [];
+  for (let k = 0; k < batchSize; k++) strips.push(SHOCK_Q_STRIPS[(start + k) % n]);
+  shockQueryOffset = (start + batchSize) % n;
+
+  const stripSummaries = strips.map((s) => (s.length > 52 ? `${s.slice(0, 49)}…` : s));
+  console.log("[NewsShock] Fetch strips", `${start}–${(start + batchSize - 1) % n}`, ":", stripSummaries.join(" | "));
+
+  let articles = [];
+  let anyHttpOk = false;
+  let rawMergedCount = 0;
+  let saw429 = false;
+  try {
+    const newsSize = 8;
+    const urls = strips.map(
+      (strip) =>
+        `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${encodeURIComponent(strip)}&language=en&size=${newsSize}`
+    );
+    const responses = await Promise.all(urls.map((u) => fetch(u, { signal: AbortSignal.timeout(8000) })));
+    const rows = [];
+    for (let i = 0; i < responses.length; i++) {
+      const r = responses[i];
+      const strip = strips[i];
+      if (r.status === 429) {
+        saw429 = true;
+        NEWS_BACKOFF_UNTIL = Date.now() + 10 * 60 * 1000;
+      }
+      if (r.ok) {
+        anyHttpOk = true;
+        const d = await r.json().catch(() => ({}));
+        if (d?.results?.length) rows.push(...d.results.map((a) => ({ title: a.title, url: a.link })));
+      } else {
+        const text = await r.text().catch(() => "");
+        let detail = "";
+        try {
+          const j = JSON.parse(text);
+          detail = j?.results?.message || j?.results?.code || j?.message || j?.status || "";
+        } catch {
+          detail = text.slice(0, 160);
+        }
+        const shortQ = strip.length > 60 ? `${strip.slice(0, 57)}...` : strip;
+        const safeDetail = String(detail)
+          .replaceAll(String(NEWSDATA_KEY), "***")
+          .slice(0, 160);
+        console.log("[NewsShock] Query failed", r.status, shortQ, safeDetail);
+      }
+    }
+    if (saw429) {
+      console.log("[NewsShock] Backoff set until", new Date(NEWS_BACKOFF_UNTIL).toISOString(), "(429 from NewsData)");
+    }
+    const merged = dedupeArticlesByTitle(rows).filter((a) => !isExcludedNewsUrl(a.url));
+    rawMergedCount = merged.length;
+    articles = merged
+      .filter((a) => String(a.title || "").trim().length >= 15)
+      .slice(0, 18);
+    console.log("[NewsShock] Fresh fetch:", rawMergedCount, "merged →", articles.length, "(no market headline filter)");
+  } catch (e) {
+    console.log("[NewsShock] Fetch error:", e.message);
+  }
+
+  if (articles.length > 0) {
+    LAST_GOOD_SHOCK_ARTICLES = articles.slice();
+  } else if (LAST_GOOD_SHOCK_ARTICLES && LAST_GOOD_SHOCK_ARTICLES.length) {
+    console.log("[NewsShock] Using last good articles", LAST_GOOD_SHOCK_ARTICLES.length, "(empty or filtered-out fetch)");
+    articles = LAST_GOOD_SHOCK_ARTICLES.slice();
+  } else {
+    articles = shockNewsPlaceholderArticles(anyHttpOk);
+  }
+
+  shockNewsCache = { articles, ts: now };
+  logStat("news_shock", { count: articles.length, cached: false, rawMerged: rawMergedCount, saw429, strips: batchSize });
   return articles;
 }
 
@@ -2372,6 +2511,13 @@ function handleRequest(req, res) {
 
   if (pathOnly === "/api/news") {
     fetchNewsWithCache().then(articles => res.writeHead(200, {"Content-Type": "application/json"}).end(JSON.stringify({ articles })));
+    return;
+  }
+
+  if (pathOnly === "/api/news-shock") {
+    fetchShockNewsWithCache().then((articles) =>
+      res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ articles }))
+    );
     return;
   }
 
