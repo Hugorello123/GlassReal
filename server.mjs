@@ -387,16 +387,222 @@ function isMarketRelevantHeadline(title) {
   return false;
 }
 
+function normalizeHeadlineKey(title) {
+  return String(title || "")
+    .toLowerCase()
+    .replace(/[''`]/g, "'")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const NEWS_HEADLINE_STOP = new Set([
+  "the", "and", "for", "that", "with", "from", "says", "said", "will", "after", "into", "over", "about", "amid",
+  "more", "than", "have", "has", "are", "was", "were", "its", "their", "they", "this", "when", "what", "how", "not",
+  "but", "you", "all", "can", "out", "new", "now", "day", "who", "may", "his", "her", "our", "your", "been", "being",
+]);
+
+function headlineSignificantTokens(title) {
+  return normalizeHeadlineKey(title)
+    .split(" ")
+    .filter((w) => w.length > 2 && !NEWS_HEADLINE_STOP.has(w));
+}
+
+function headlineJaccardSimilarity(a, b) {
+  const ta = new Set(headlineSignificantTokens(a));
+  const tb = new Set(headlineSignificantTokens(b));
+  if (!ta.size || !tb.size) return 0;
+  let inter = 0;
+  for (const w of ta) if (tb.has(w)) inter++;
+  return inter / (ta.size + tb.size - inter);
+}
+
+function isNearDuplicateHeadline(title, pickedTitles, threshold = 0.52) {
+  const na = normalizeHeadlineKey(title);
+  for (const prev of pickedTitles) {
+    if (headlineJaccardSimilarity(title, prev) >= threshold) return true;
+    const nb = normalizeHeadlineKey(prev);
+    if (na.length > 36 && nb.length > 36) {
+      const aShort = na.slice(0, Math.min(55, na.length));
+      const bShort = nb.slice(0, Math.min(55, nb.length));
+      if (na.includes(bShort) || nb.includes(aShort)) return true;
+    }
+  }
+  return false;
+}
+
+function newsArticleDomain(url) {
+  try {
+    return new URL(String(url)).hostname.toLowerCase().replace(/^www\./, "") || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** Theme buckets for diversity caps on /api/news (not catalyst-watch clusters). */
+const NEWS_THEME_RULES = [
+  { id: "fed", needles: ["fed ", "federal reserve", "fomc", "cpi", "inflation", "interest rate", "powell", "yields", "treasury"] },
+  { id: "oil", needles: ["oil", "wti", "brent", "crude", "opec", "petroleum"] },
+  { id: "gold", needles: ["gold", "xau", "bullion"] },
+  { id: "dollar", needles: ["dollar", "dxy", "forex", "currency", "yen", "euro", "sterling"] },
+  { id: "crypto", needles: ["bitcoin", "btc", "ethereum", "eth", "crypto"] },
+  { id: "equities", needles: ["stocks", "nasdaq", "s&p", "wall street", "earnings", "ipo", "dow jones", "shares"] },
+  { id: "ai_chips", needles: ["nvidia", "semiconductor", "chip", "foundry", "tsmc", "broadcom", "micron", "intel"] },
+  { id: "trade_china", needles: ["china", "taiwan", "beijing", "tariff", "trade war", "us-china", "rare earth", "agricultural", "export control", "xi jinping"] },
+  { id: "energy", needles: ["natural gas", "lng", "nuclear", "power grid", "renewable"] },
+];
+
+function classifyNewsTheme(title) {
+  const hay = normalizeHeadlineKey(title);
+  for (const rule of NEWS_THEME_RULES) {
+    for (const n of rule.needles) {
+      if (hay.includes(n)) return rule.id;
+    }
+  }
+  return "macro";
+}
+
+const NEWS_DIVERSITY_MAX = 12;
+const NEWS_DIVERSITY_MIN = 6;
+const NEWS_MAX_PER_THEME = 2;
+const NEWS_MAX_PER_DOMAIN = 2;
+
 function dedupeArticlesByTitle(rows) {
-  const seen = new Set();
+  const pickedTitles = [];
   const out = [];
   for (const a of rows) {
-    const t = String(a?.title || "").trim().toLowerCase().replace(/\s+/g, " ");
-    if (!t || seen.has(t)) continue;
-    seen.add(t);
+    const t = String(a?.title || "").trim();
+    if (!t) continue;
+    const key = normalizeHeadlineKey(t);
+    if (!key) continue;
+    if (isNearDuplicateHeadline(t, pickedTitles, 0.48)) continue;
+    pickedTitles.push(t);
     out.push(a);
   }
-  return out.slice(0, 24);
+  return out.slice(0, 40);
+}
+
+/**
+ * Greedy diverse pick: theme + domain caps, near-duplicate skip, round-robin across themes.
+ * @param {Array<{title:string,url:string}>} pool
+ * @param {{ max?: number, maxPerTheme?: number, maxPerDomain?: number, alreadyPicked?: Array<{title:string}> }} opts
+ */
+function pickDiverseMarketHeadlines(pool, opts = {}) {
+  const max = opts.max ?? NEWS_DIVERSITY_MAX;
+  const maxPerTheme = opts.maxPerTheme ?? NEWS_MAX_PER_THEME;
+  const maxPerDomain = opts.maxPerDomain ?? NEWS_MAX_PER_DOMAIN;
+  const selected = [];
+  const themeCounts = {};
+  const domainCounts = {};
+  const pickedTitles = (opts.alreadyPicked || []).map((a) => a.title);
+
+  const byTheme = new Map();
+  for (const a of pool) {
+    if (!a?.title) continue;
+    if (isNearDuplicateHeadline(a.title, pickedTitles)) continue;
+    const theme = classifyNewsTheme(a.title);
+    if (!byTheme.has(theme)) byTheme.set(theme, []);
+    byTheme.get(theme).push(a);
+  }
+
+  const themeOrder = [...byTheme.keys()].sort((a, b) => (byTheme.get(b)?.length || 0) - (byTheme.get(a)?.length || 0));
+
+  const tryPickFromTheme = (theme, ignoreThemeCap = false) => {
+    const list = byTheme.get(theme);
+    if (!list?.length) return false;
+    if (!ignoreThemeCap && (themeCounts[theme] || 0) >= maxPerTheme) return false;
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      const dom = newsArticleDomain(a.url);
+      if ((domainCounts[dom] || 0) >= maxPerDomain) continue;
+      if (isNearDuplicateHeadline(a.title, pickedTitles)) continue;
+      list.splice(i, 1);
+      selected.push(a);
+      themeCounts[theme] = (themeCounts[theme] || 0) + 1;
+      domainCounts[dom] = (domainCounts[dom] || 0) + 1;
+      pickedTitles.push(a.title);
+      return true;
+    }
+    return false;
+  };
+
+  let progressed = true;
+  while (selected.length < max && progressed) {
+    progressed = false;
+    for (const theme of themeOrder) {
+      if (selected.length >= max) break;
+      if (tryPickFromTheme(theme, false)) progressed = true;
+    }
+  }
+
+  if (selected.length < max) {
+    for (const theme of themeOrder) {
+      while (selected.length < max && tryPickFromTheme(theme, true)) {
+        /* fill remaining slots with relaxed theme cap */
+      }
+    }
+  }
+
+  return selected;
+}
+
+/** Looser than isMarketRelevantHeadline — still market-ish for fallback fill. */
+function isLooseMarketHeadline(title) {
+  const hay = normalizeHeadlineKey(title);
+  if (!hay || hay.length < 18) return false;
+  for (const w of MARKET_BLOCK_WORDS) {
+    if (headlineHasToken(hay, w)) return false;
+  }
+  if (MARKET_BLOCK_GAME_RE.test(hay)) return false;
+  for (const w of MARKET_ALLOW_WORDS) {
+    if (headlineHasToken(hay, w)) return true;
+  }
+  for (const ph of MARKET_ALLOW_PHRASES) {
+    if (headlineHasPhrase(hay, ph)) return true;
+  }
+  return false;
+}
+
+function buildDiverseMarketNewsArticles(mergedRows) {
+  const strict = mergedRows.filter((a) => isMarketRelevantHeadline(a.title));
+  let diverse = pickDiverseMarketHeadlines(strict, { max: NEWS_DIVERSITY_MAX });
+  const usedKeys = new Set(diverse.map((a) => normalizeHeadlineKey(a.title)));
+
+  if (diverse.length < NEWS_DIVERSITY_MIN) {
+    const fallbackPool = mergedRows.filter((a) => {
+      const k = normalizeHeadlineKey(a.title);
+      if (!k || usedKeys.has(k)) return false;
+      if (isNearDuplicateHeadline(a.title, diverse.map((x) => x.title))) return false;
+      return isLooseMarketHeadline(a.title) || isMarketRelevantHeadline(a.title);
+    });
+    const extra = pickDiverseMarketHeadlines(fallbackPool, {
+      max: NEWS_DIVERSITY_MAX - diverse.length,
+      maxPerTheme: NEWS_MAX_PER_THEME,
+      maxPerDomain: NEWS_MAX_PER_DOMAIN,
+      alreadyPicked: diverse,
+    });
+    diverse = diverse.concat(extra);
+  }
+
+  if (diverse.length < NEWS_DIVERSITY_MIN) {
+    const anyLeft = mergedRows.filter((a) => {
+      const k = normalizeHeadlineKey(a.title);
+      return k && !usedKeys.has(k) && !isNearDuplicateHeadline(a.title, diverse.map((x) => x.title));
+    });
+    for (const a of anyLeft) {
+      if (diverse.length >= NEWS_DIVERSITY_MIN) break;
+      const k = normalizeHeadlineKey(a.title);
+      if (usedKeys.has(k)) continue;
+      diverse.push(a);
+      usedKeys.add(k);
+    }
+  }
+
+  return { strictCount: strict.length, diverse, themeHistogram: diverse.reduce((acc, a) => {
+    const t = classifyNewsTheme(a.title);
+    acc[t] = (acc[t] || 0) + 1;
+    return acc;
+  }, {}) };
 }
 
 function newsPlaceholderArticles(anyHttpOk) {
@@ -637,7 +843,7 @@ async function fetchNewsWithCache() {
   }
 
   const n = NEWS_Q_STRIPS.length;
-  const batchSize = 3;
+  const batchSize = 4;
   const start = newsQueryOffset % n;
   const strips = [];
   for (let k = 0; k < batchSize; k++) strips.push(NEWS_Q_STRIPS[(start + k) % n]);
@@ -651,7 +857,7 @@ async function fetchNewsWithCache() {
   let rawMergedCount = 0;
   let saw429 = false;
   try {
-    const newsSize = 8;
+    const newsSize = 10;
     const urls = strips.map(
       (strip) =>
         `https://newsdata.io/api/1/news?apikey=${NEWSDATA_KEY}&q=${encodeURIComponent(strip)}&language=en&size=${newsSize}`
@@ -690,8 +896,18 @@ async function fetchNewsWithCache() {
     }
     const merged = dedupeArticlesByTitle(rows).filter((a) => !isExcludedNewsUrl(a.url));
     rawMergedCount = merged.length;
-    articles = merged.filter((a) => isMarketRelevantHeadline(a.title)).slice(0, 20);
-    console.log("[News] Fresh fetch:", rawMergedCount, "merged →", articles.length, "after relevance filter");
+    const { strictCount, diverse, themeHistogram } = buildDiverseMarketNewsArticles(merged);
+    articles = diverse;
+    console.log(
+      "[News] Fresh fetch:",
+      rawMergedCount,
+      "merged →",
+      strictCount,
+      "strict filter →",
+      articles.length,
+      "diverse final | themes:",
+      JSON.stringify(themeHistogram)
+    );
   } catch (e) {
     console.log("[News] Fetch error:", e.message);
   }
@@ -719,7 +935,14 @@ async function fetchNewsWithCache() {
   }
 
   newsCache = { articles, ts: now };
-  logStat("news", { count: articles.length, cached: false, rawMerged: rawMergedCount, saw429, strips: batchSize });
+  logStat("news", {
+    count: articles.length,
+    cached: false,
+    rawMerged: rawMergedCount,
+    saw429,
+    strips: batchSize,
+    diverse: !isPlaceholderNewsArticles(articles),
+  });
   return articles;
 }
 
