@@ -1,5 +1,6 @@
 // src/dashboard.tsx
 import MarketSlots from "@/components/MarketSlots";
+import { useState, useEffect } from "react";
 import EquitiesCommoditiesPanel from "@/components/EquitiesCommoditiesPanel";
 
 import EthPrice from "@/lib/eth";
@@ -65,6 +66,7 @@ function catalystWatchThemeLabel(row: BreakingPulsePred): string {
   if (c === "musk_intel") return "Musk / Tesla / Intel";
   if (c === "fed_pivot") return "Fed policy / yields / inflation";
   if (c === "us_china_trade") return "US–China trade & export controls";
+  if (c === "energy_incident") return "Energy / supply disruption";
   return "Macro / catalyst headlines";
 }
 

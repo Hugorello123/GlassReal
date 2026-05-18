@@ -112,6 +112,7 @@ function catalystClusterTheme(cluster: string): string {
   if (c === "musk_intel") return "Musk / Tesla / Intel";
   if (c === "fed_pivot") return "Fed policy / yields / inflation";
   if (c === "us_china_trade") return "US–China trade & export controls";
+  if (c === "energy_incident") return "Energy / supply disruption";
   return "Catalyst cluster";
 }
 

@@ -107,7 +107,9 @@ function formatCatalystWatchTelegram(p) {
         ? "Fed policy / yields / inflation"
         : cluster === "us_china_trade"
           ? "US–China trade & export controls"
-          : "Macro / catalyst headlines";
+          : cluster === "energy_incident"
+            ? "Energy / supply disruption"
+            : "Macro / catalyst headlines";
   const whyBody =
     cluster === "musk_intel"
       ? "Rumor pressure is building around Musk / Tesla / Intel. No confirmed acquisition. This may create temporary sentiment volatility in related semiconductor and EV-linked names."
@@ -115,7 +117,9 @@ function formatCatalystWatchTelegram(p) {
         ? "Macro headline pressure is building around the Fed, yields, the dollar, or inflation prints. This may create short-lived volatility across rates-sensitive assets."
         : cluster === "us_china_trade"
           ? "Headline pressure is building around US–China trade, tariffs, Taiwan risk, or export controls. This may create temporary volatility in semiconductors and macro proxies."
-          : String(p.why || "Awareness-only headline clustering. Not a trade signal.");
+          : cluster === "energy_incident"
+            ? "Headline pressure is building around an energy supply incident, refinery or pipeline outage, OPEC/Middle East risk, or related disruption narratives. This may create short-lived moves in crude, havens, and EM FX — not a confirmed physical supply shock."
+            : String(p.why || "Awareness-only headline clustering. Not a trade signal.");
   const impact =
     cluster === "musk_intel"
       ? [
@@ -141,10 +145,17 @@ function formatCatalystWatchTelegram(p) {
               "MU — China / memory-cycle exposure",
               "TSLA — China demand / exposure risk",
             ].join("\n")
-          : (Array.isArray(p.affectedAssets) ? p.affectedAssets : [])
-              .map((x) => String(x))
-              .filter(Boolean)
-              .join("\n");
+          : cluster === "energy_incident"
+            ? [
+                "Oil — supply disruption / risk-premium watch",
+                "Gold — safe-haven on energy-geopolitical risk",
+                "DXY — dollar sensitivity to Middle East / oil headlines",
+                "USDZAR — EM FX risk-pressure watch",
+              ].join("\n")
+            : (Array.isArray(p.affectedAssets) ? p.affectedAssets : [])
+                .map((x) => String(x))
+                .filter(Boolean)
+                .join("\n");
   const lines = [
     `⚠️ <b>SPECULATIVE CATALYST WATCH — ${asset}</b>`,
     "",
@@ -457,6 +468,25 @@ const CATALYST_CLUSTERS = {
     assets: ["Gold", "DXY", "TSM", "NVDA", "INTC", "AVGO", "MU", "TSLA"],
     why:
       "Speculative catalyst watch: headline pressure building around US–China trade, tariffs, or export controls. Awareness only — not a trade signal.",
+  },
+  energy_incident: {
+    keywords: [
+      "uae",
+      "reactor",
+      "nuclear",
+      "refinery",
+      "pipeline",
+      "outage",
+      "explosion",
+      "opec",
+      "saudi",
+      "iran",
+      "middle east",
+      "supply disruption",
+    ],
+    assets: ["Oil", "Gold", "DXY", "USDZAR"],
+    why:
+      "Speculative catalyst watch: energy or supply-side incident / Middle East–linked disruption in headlines. No confirmed field impact. Awareness only — not a trade signal.",
   },
 };
 
