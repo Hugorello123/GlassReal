@@ -553,35 +553,35 @@ export default function DisplayPage() {
     healthOk === true ? "bg-emerald-500" : healthOk === false ? "bg-amber-500" : "bg-slate-500";
 
   const hotSectorsBlock = (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-cyan-500/35 bg-gradient-to-b from-cyan-950/40 via-[#0a1018] to-black/80 px-2 py-2.5 shadow-[0_0_36px_-12px_rgba(34,211,238,0.25),inset_0_1px_0_rgba(255,255,255,0.06)]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-cyan-500/35 bg-gradient-to-b from-cyan-950/40 via-[#0a1018] to-black/80 px-1.5 py-1.5 shadow-[0_0_36px_-12px_rgba(34,211,238,0.25),inset_0_1px_0_rgba(255,255,255,0.06)]">
       <span className="sr-only">
         Twenty-four hour percent from the sweep when the ticker is on the price feed: NVDA and INTC only. Other symbols are labels until wired.
       </span>
-      <div className="shrink-0 text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.45)]">
+      <div className="shrink-0 text-[9px] font-bold uppercase tracking-[0.22em] text-cyan-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.45)]">
         Hot sectors
       </div>
-      <div className="mt-0.5 shrink-0 text-[10px] font-bold uppercase tracking-[0.2em] text-violet-200/95 [text-shadow:0_0_14px_rgba(167,139,250,0.35)]">
+      <div className="mt-0.5 shrink-0 text-[9px] font-bold uppercase tracking-[0.18em] text-violet-200/95 [text-shadow:0_0_14px_rgba(167,139,250,0.35)]">
         AI / Semiconductors
       </div>
-      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-2 gap-x-1.5 gap-y-1 auto-rows-min content-start overflow-hidden text-center font-mono">
+      <div className="mt-1 grid min-h-0 min-w-0 flex-1 grid-cols-2 grid-rows-3 gap-x-1 gap-y-0.5 overflow-hidden text-center font-mono">
         {hotSectorRows.map((row, i) => {
           const chStr = row.hasLiveCh ? fmtCh(row.chRaw) : null;
           return (
             <div
               key={row.sym}
-              className={`flex min-h-0 flex-col items-center justify-center rounded-md border px-0.5 py-1 [text-shadow:0_0_10px_rgba(255,255,255,0.2)] ${
+              className={`flex min-h-0 min-w-0 flex-col items-center justify-center overflow-hidden rounded border px-0.5 py-0.5 [text-shadow:0_0_10px_rgba(255,255,255,0.2)] ${
                 i % 2 === 0
                   ? "border-cyan-400/45 bg-gradient-to-br from-cyan-900/50 via-slate-900/95 to-slate-950 shadow-[0_0_14px_-6px_rgba(34,211,238,0.4),inset_0_1px_0_rgba(255,255,255,0.1)]"
                   : "border-violet-400/40 bg-gradient-to-br from-violet-950/55 via-slate-900/95 to-slate-950 shadow-[0_0_14px_-6px_rgba(167,139,250,0.3),inset_0_1px_0_rgba(255,255,255,0.08)]"
               }`}
             >
-              <span className="text-xs font-black leading-tight tracking-wide text-white">{row.sym}</span>
+              <span className="text-[10px] font-black leading-none tracking-wide text-white">{row.sym}</span>
               {chStr ? (
-                <span className={`mt-0.5 text-[10px] font-bold leading-tight tabular-nums md:text-xs ${chgToneClass(row.chRaw)}`}>
+                <span className={`mt-0.5 text-[9px] font-bold leading-none tabular-nums ${chgToneClass(row.chRaw)}`}>
                   {chStr}
                 </span>
               ) : (
-                <span className="mt-0.5 text-[10px] font-semibold leading-tight tabular-nums text-slate-500 md:text-xs">—</span>
+                <span className="mt-0.5 text-[9px] font-semibold leading-none tabular-nums text-slate-500">—</span>
               )}
             </div>
           );
@@ -601,7 +601,7 @@ export default function DisplayPage() {
 
   const newsWireCard = (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-emerald-500/30 bg-black/50 p-3 shadow-inner">
-      <div className="flex min-h-0 min-w-0 flex-[2.1] flex-col overflow-hidden pb-2">
+      <div className="flex min-h-0 min-w-0 flex-[2.35] flex-col overflow-hidden pb-4">
         <div className="flex shrink-0 items-baseline justify-between gap-2">
           <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300/90">News wire</div>
           {headlineThree.length > 1 ? (
@@ -610,13 +610,13 @@ export default function DisplayPage() {
             </div>
           ) : null}
         </div>
-        <div className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col justify-start overflow-hidden">
+        <div className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col justify-start">
           {headlineThree.length === 0 ? (
             <p className="line-clamp-2 text-sm font-medium leading-snug text-slate-500">No headlines on this sweep.</p>
           ) : (
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-start overflow-hidden">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-start">
               {headlineThree.length > 1 ? (
-                <div className="mb-1.5 flex shrink-0 justify-center gap-2" aria-hidden>
+                <div className="mb-1 flex shrink-0 justify-center gap-2" aria-hidden>
                   {headlineThree.map((_, i) => (
                     <span
                       key={i}
@@ -625,10 +625,10 @@ export default function DisplayPage() {
                   ))}
                 </div>
               ) : null}
-              <div key={newsWireIdx} className="min-w-0 flex-1 overflow-hidden">
-                <div className="font-mono text-xs font-bold text-emerald-400/90">{newsWireIdx + 1}.</div>
+              <div key={newsWireIdx} className="min-w-0 shrink-0">
+                <div className="font-mono text-[10px] font-bold text-emerald-400/90">{newsWireIdx + 1}.</div>
                 <p
-                  className="mt-1.5 line-clamp-3 min-h-0 break-words text-base font-semibold leading-normal text-slate-100 md:text-lg"
+                  className="mt-1 line-clamp-2 min-h-0 max-w-full break-words text-sm font-semibold leading-snug text-slate-100 md:text-[0.95rem]"
                   aria-live="polite"
                   title={headlineThree[newsWireIdx]}
                 >
@@ -640,7 +640,7 @@ export default function DisplayPage() {
         </div>
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-[1] flex-col overflow-hidden border-t border-rose-500/25 pt-2">
+      <div className="flex min-h-0 min-w-0 flex-[0.95] shrink-0 flex-col overflow-hidden border-t border-rose-500/25 pt-3">
         <div className="flex shrink-0 items-baseline justify-between gap-2">
           <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-rose-300/90">Global shock watch</div>
           {shockHeadlineThree.length > 1 ? (
@@ -652,9 +652,7 @@ export default function DisplayPage() {
         <div className="mt-1.5 flex min-h-0 min-w-0 flex-1 flex-col justify-start overflow-hidden pb-0.5">
           {shockHeadlineThree.length === 0 ? (
             <p className="line-clamp-2 text-xs font-medium leading-snug text-slate-500 md:text-sm">
-              {shockArticles.length && isPlaceholderShockArticles(shockArticles)
-                ? String(shockArticles[0]?.title || "—")
-                : "No geopolitical shock headlines on this sweep."}
+              No global shock headlines in this sweep.
             </p>
           ) : (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-start overflow-hidden">
