@@ -120,14 +120,25 @@ function pulseSourceLabel(p: PredRow): string {
   return "awareness";
 }
 
-function shortReason(p: PredRow): string {
-  if (isCatalystWatchRow(p)) return catalystWatchThemeLabel(p);
-  if (isPriceShockRow(p)) {
+function shortReason(p: PredRow, maxLen: number): string {
+  let base: string;
+  if (isCatalystWatchRow(p)) base = catalystWatchThemeLabel(p);
+  else if (isPriceShockRow(p)) {
     const w = String(p.why || "").trim();
-    return w.slice(0, 120) || "Price pressure window — awareness.";
+    base = w || "Price pressure window — awareness.";
+  } else {
+    const h = parseFastGossipHeadline(p.why);
+    base = h || "Headline-linked chatter — awareness.";
   }
-  const h = parseFastGossipHeadline(p.why);
-  return h.slice(0, 120) || "Headline-linked chatter — awareness.";
+  return trimDisplayLine(base, maxLen);
+}
+
+function trimDisplayLine(s: string, max: number): string {
+  const t = String(s || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, Math.max(0, max - 1))}…`;
 }
 
 function isPlaceholderNewsArticles(articles: { title?: string }[]): boolean {
@@ -180,6 +191,9 @@ export default function DisplayPage() {
     if (tierParam === "pro") return false;
     return lifecycle === "FREE_BILLBOARD";
   }, [tierParam, lifecycle]);
+
+  /** Pro-style layout: boardroom density, minimal promo (not Free billboard). */
+  const isProBoardroom = !visualFree;
 
   const showWarningBanner = tierParam === "auto" && lifecycle === "PRO_WARNING";
 
@@ -296,23 +310,30 @@ export default function DisplayPage() {
   }, [lastSweepAt, tick]);
 
   const catalystRows = useMemo(() => {
+    const cap = isProBoardroom ? 4 : 5;
     return predictions
       .filter(isCatalystWatchRow)
       .sort((a, b) => (Date.parse(String(b.time || "")) || 0) - (Date.parse(String(a.time || "")) || 0))
-      .slice(0, 6);
-  }, [predictions]);
+      .slice(0, cap);
+  }, [predictions, isProBoardroom]);
 
   const breakingRows = useMemo(() => {
+    const cap = isProBoardroom ? 4 : 5;
     return predictions
       .filter(isBreakingPulseRow)
       .sort((a, b) => (Date.parse(String(b.time || "")) || 0) - (Date.parse(String(a.time || "")) || 0))
-      .slice(0, 8);
-  }, [predictions]);
+      .slice(0, cap);
+  }, [predictions, isProBoardroom]);
 
   const newsHeadlines = useMemo(() => {
+    const cap = isProBoardroom ? 5 : 6;
     if (!newsArticles.length || isPlaceholderNewsArticles(newsArticles)) return [];
-    return newsArticles.slice(0, 6).map((a) => String(a.title || "").trim()).filter(Boolean);
-  }, [newsArticles]);
+    return newsArticles
+      .slice(0, cap)
+      .map((a) => String(a.title || "").trim())
+      .filter(Boolean)
+      .map((t) => trimDisplayLine(t, isProBoardroom ? 72 : 96));
+  }, [newsArticles, isProBoardroom]);
 
   const p = prices && typeof prices === "object" ? prices : null;
   const btc = p ? fmtUsd(p.btc) : null;
@@ -324,8 +345,20 @@ export default function DisplayPage() {
   const goldCh = p ? fmtCh(p.goldCh) : null;
   const oilCh = p ? fmtCh(p.oilCh) : null;
 
+  const spotSlots = useMemo(() => {
+    const rows = [
+      { key: "gold", label: "Gold", sub: "XAU / GC", value: gold, change: goldCh },
+      { key: "oil", label: "Oil", sub: "WTI / CL", value: oil, change: oilCh },
+      { key: "btc", label: "BTC", sub: "USD", value: btc, change: btcCh },
+      { key: "eth", label: "ETH", sub: "USD", value: eth, change: ethCh },
+    ];
+    return rows.filter((r): r is (typeof rows)[number] & { value: string } => r.value != null && r.value !== "");
+  }, [gold, oil, btc, eth, goldCh, oilCh, btcCh, ethCh]);
+
   const statusColor =
     healthOk === true ? "bg-emerald-500/90 shadow-[0_0_12px_rgba(16,185,129,0.35)]" : healthOk === false ? "bg-amber-500/80" : "bg-slate-500/60";
+
+  const reasonMax = isProBoardroom ? 52 : 72;
 
   return (
     <div
@@ -345,93 +378,149 @@ export default function DisplayPage() {
 
       {/* Warning-phase banner */}
       {showWarningBanner && (
-        <div className="relative z-20 shrink-0 border-b border-amber-500/25 bg-amber-950/35 px-4 py-2 text-center text-sm md:text-base text-amber-100/95">
+        <div className="relative z-20 shrink-0 border-b border-amber-500/25 bg-amber-950/35 px-3 py-1.5 text-center text-xs md:text-sm text-amber-100/95">
           Display Pro preview ends in {daysLeftPro} day{daysLeftPro === 1 ? "" : "s"}. Scan or open{" "}
           <span className="font-semibold text-cyan-200/90">sentotrade.io</span> to keep this layout.
         </div>
       )}
 
-      <header className="relative z-10 shrink-0 flex items-center justify-between gap-2 px-3 py-2 md:px-4 border-b border-white/[0.06] bg-black/40 backdrop-blur-sm">
-        <div className="flex items-baseline gap-3 min-w-0">
-          <span className={`text-lg md:text-2xl font-bold tracking-tight truncate ${visualFree ? "text-cyan-300/95" : "text-slate-200"}`}>
+      <header
+        className={`relative z-10 shrink-0 flex items-center justify-between gap-2 px-3 border-b border-white/[0.06] bg-black/40 backdrop-blur-sm ${
+          isProBoardroom ? "py-1.5" : "py-2 md:px-4"
+        }`}
+      >
+        <div className="flex items-baseline gap-2 min-w-0">
+          <span
+            className={`font-bold tracking-tight truncate ${
+              visualFree ? "text-xl md:text-2xl text-cyan-300/95" : "text-base md:text-lg text-slate-100 font-semibold"
+            }`}
+          >
             SentoTrade Display
           </span>
-          <span className="hidden sm:inline text-slate-500 text-sm md:text-base font-medium">·</span>
-          <span className="hidden sm:inline text-slate-400 text-sm md:text-base font-medium whitespace-nowrap">Market Weather</span>
+          <span
+            className={`hidden sm:inline font-medium whitespace-nowrap ${
+              isProBoardroom ? "text-[11px] text-slate-500" : "text-slate-400 text-sm md:text-base"
+            }`}
+          >
+            {isProBoardroom ? "· Radar" : "· Market Weather"}
+          </span>
         </div>
-        <div className="flex items-center gap-3 shrink-0 text-sm md:text-base tabular-nums text-slate-300">
+        <div className={`flex items-center gap-2 shrink-0 tabular-nums text-slate-300 ${isProBoardroom ? "text-sm" : "text-sm md:text-base"}`}>
           <time dateTime={clock.toISOString()}>
             {clock.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           </time>
           <span className={`inline-block h-2.5 w-2.5 rounded-full ${statusColor}`} title={healthOk ? "Radar online" : "Radar degraded"} />
-          <span className="hidden md:inline text-xs text-slate-500 max-w-[10rem] truncate">Powered by SentoTrade</span>
+          <span
+            className={`hidden lg:inline text-slate-500 truncate ${isProBoardroom ? "text-[10px] max-w-[7rem]" : "text-xs max-w-[10rem]"}`}
+          >
+            {isProBoardroom ? "SentoTrade" : "Powered by SentoTrade"}
+          </span>
         </div>
       </header>
 
-      <div className="relative z-10 flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-1.5 px-2 py-1.5 lg:px-3 lg:py-2">
-        {/* Left — core tiles */}
-        <aside className="lg:col-span-3 min-h-0 flex flex-col gap-1.5 overflow-hidden">
-          <div className="text-[10px] uppercase tracking-widest text-slate-500 px-1">Spot (terminal feed)</div>
-          <div className="flex-1 grid grid-cols-2 lg:grid-cols-1 gap-1.5 min-h-0 auto-rows-fr min-h-[8rem]">
-            <Tile label="Gold" sub="XAU / GC" value={gold} change={goldCh} />
-            <Tile label="Oil" sub="WTI / CL" value={oil} change={oilCh} />
-            <Tile label="DXY" sub="Dollar index" mode="macro_watching" />
-            <Tile label="USD/ZAR" sub="Emerging FX" mode="macro_watching" />
-            <Tile label="BTC" sub="USD" value={btc} change={btcCh} />
-            <Tile label="ETH" sub="USD" value={eth} change={ethCh} />
+      <div className="relative z-10 flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-1.5 px-2 py-1 lg:px-3 lg:py-1.5 min-h-0">
+        {/* Left — spot tiles only when /api/prices returned a real figure */}
+        <aside className="lg:col-span-3 min-h-0 flex flex-col gap-1 overflow-hidden">
+          <div
+            className={`uppercase tracking-widest text-slate-500 px-1 shrink-0 font-semibold ${
+              isProBoardroom ? "text-[10px]" : "text-[11px]"
+            }`}
+          >
+            Spot (/api/prices)
           </div>
+          {spotSlots.length === 0 ? (
+            <div className="flex-1 min-h-0 flex items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.02] px-2 py-3">
+              <p className="text-center text-sm text-slate-500 leading-snug">Watching · no spot quotes on last sweep.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2 flex-1 min-h-0 auto-rows-fr content-start">
+              {spotSlots.map((s, idx) => (
+                <div
+                  key={s.key}
+                  className={
+                    spotSlots.length === 1
+                      ? "col-span-2"
+                      : spotSlots.length === 3 && idx === 2
+                        ? "col-span-2 max-w-lg mx-auto w-full"
+                        : ""
+                  }
+                >
+                  <SpotTile label={s.label} sub={s.sub} value={s.value} change={s.change} dense={isProBoardroom} />
+                </div>
+              ))}
+            </div>
+          )}
         </aside>
 
-        {/* Center — weather / catalyst / headlines */}
-        <main className="lg:col-span-5 min-h-0 flex flex-col gap-1.5 overflow-hidden rounded-lg border border-white/[0.06] bg-black/35 p-2.5 md:p-3 backdrop-blur-sm">
+        {/* Center — weather / catalyst / headlines (no scrollbars — clipped lists) */}
+        <main
+          className={`lg:col-span-5 min-h-0 flex flex-col overflow-hidden rounded-lg border border-white/[0.06] bg-black/35 backdrop-blur-sm min-h-0 ${
+            isProBoardroom ? "gap-1 p-2" : "gap-1.5 p-2.5 md:p-3"
+          }`}
+        >
           <div className="flex justify-between items-start gap-2 shrink-0">
-            <h2 className="text-base md:text-xl font-semibold text-cyan-200/90">Market weather</h2>
-            <div className="text-right text-xs text-slate-500 leading-tight">
-              <div>Last radar sweep: {lastSweepLabel}</div>
-              {nextSweepSec != null && <div>Next sweep in {nextSweepSec}s</div>}
+            <h2 className={`font-semibold text-cyan-200/90 ${isProBoardroom ? "text-base" : "text-base md:text-xl"}`}>Market weather</h2>
+            <div className={`text-right text-slate-500 leading-tight shrink-0 ${isProBoardroom ? "text-[10px]" : "text-xs"}`}>
+              <div>Sweep {lastSweepLabel}</div>
+              {nextSweepSec != null && <div>Next {nextSweepSec}s</div>}
             </div>
           </div>
           <div className="shrink-0 flex items-baseline gap-2">
-            <span className="text-slate-500 text-xs md:text-sm">Gossip intensity</span>
-            <span className="text-xl md:text-3xl font-bold text-slate-100 tabular-nums">
+            <span className={`text-slate-500 ${isProBoardroom ? "text-xs" : "text-xs md:text-sm"}`}>Gossip intensity</span>
+            <span className={`font-bold text-slate-100 tabular-nums ${isProBoardroom ? "text-2xl" : "text-xl md:text-3xl"}`}>
               {gossip ? `${gossip.intensity}/10` : "—"}
             </span>
             {!gossip && <span className="text-xs text-slate-500">watching</span>}
           </div>
           {gossip && gossip.spywords.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 shrink-0">
-              {gossip.spywords.slice(0, 8).map((w, i) => (
-                <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300/90 border border-cyan-500/15">
+            <div className="flex flex-wrap gap-1 shrink-0 overflow-hidden">
+              {gossip.spywords.slice(0, isProBoardroom ? 6 : 8).map((w, i) => (
+                <span
+                  key={i}
+                  className={`rounded-full bg-cyan-500/10 text-cyan-300/90 border border-cyan-500/15 ${
+                    isProBoardroom ? "text-[10px] px-1.5 py-0.5" : "text-xs px-2 py-0.5"
+                  }`}
+                >
                   {w}
                 </span>
               ))}
             </div>
           )}
-          <div className="shrink-0 mt-1">
-            <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-1">Catalyst watch (latest)</h3>
+          <div className="shrink-0 min-h-0 overflow-hidden">
+            <h3 className={`uppercase tracking-wider text-slate-500 mb-0.5 ${isProBoardroom ? "text-[10px]" : "text-xs"}`}>
+              Catalyst watch
+            </h3>
             {catalystRows.length === 0 ? (
-              <p className="text-sm text-slate-500">Watching — no catalyst-watch rows right now.</p>
+              <p className={`text-slate-500 ${isProBoardroom ? "text-xs" : "text-sm"}`}>Watching — none right now.</p>
             ) : (
-              <ul className="space-y-1 overflow-y-auto max-h-[18vh] lg:max-h-[22vh] pr-1">
+              <ul className="space-y-0.5 overflow-hidden">
                 {catalystRows.map((r) => (
-                  <li key={r.id || `${r.asset}-${r.time}`} className="text-sm md:text-base leading-snug border-l-2 border-amber-500/40 pl-2">
+                  <li
+                    key={r.id || `${r.asset}-${r.time}`}
+                    className={`leading-tight border-l-2 border-amber-500/40 pl-2 text-slate-200 truncate ${
+                      isProBoardroom ? "text-xs" : "text-sm md:text-base"
+                    }`}
+                    title={`${String(r.asset || "—")} — ${catalystWatchThemeLabel(r)}`}
+                  >
                     <span className="text-amber-200/90 font-semibold">{String(r.asset || "—")}</span>
                     <span className="text-slate-500"> · </span>
-                    <span className="text-slate-300">{catalystWatchThemeLabel(r)}</span>
+                    <span className="text-slate-300">{trimDisplayLine(catalystWatchThemeLabel(r), isProBoardroom ? 36 : 48)}</span>
                     <span className="text-slate-500"> · {formatRelativePulse(r.time)}</span>
                   </li>
                 ))}
               </ul>
             )}
           </div>
-          <div className="flex-1 min-h-0 flex flex-col mt-1">
-            <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-1 shrink-0">Headlines</h3>
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden mt-0.5">
+            <h3 className={`uppercase tracking-wider text-slate-500 mb-0.5 shrink-0 ${isProBoardroom ? "text-[10px]" : "text-xs"}`}>
+              Headlines
+            </h3>
             {newsHeadlines.length === 0 ? (
-              <p className="text-sm text-slate-500">Watching — headlines not loaded or filtered quiet.</p>
+              <p className={`text-slate-500 shrink-0 ${isProBoardroom ? "text-xs" : "text-sm"}`}>Watching — none right now.</p>
             ) : (
-              <ul className="space-y-1 overflow-y-auto flex-1 min-h-0 pr-1 text-sm md:text-base leading-snug text-slate-200/95">
+              <ul className={`space-y-0.5 overflow-hidden text-slate-200/95 ${isProBoardroom ? "text-xs" : "text-sm md:text-base"}`}>
                 {newsHeadlines.map((t, i) => (
-                  <li key={i} className="line-clamp-2">
+                  <li key={i} className="leading-snug truncate" title={t}>
                     · {t}
                   </li>
                 ))}
@@ -440,27 +529,38 @@ export default function DisplayPage() {
           </div>
         </main>
 
-        {/* Right — breaking pulse list */}
-        <aside className="lg:col-span-4 min-h-0 flex flex-col overflow-hidden rounded-lg border border-white/[0.06] bg-black/35 p-2.5 md:p-3 backdrop-blur-sm">
-          <h2 className="text-base md:text-xl font-semibold text-orange-200/90 shrink-0 mb-1.5">Breaking pulse</h2>
+        {/* Right — breaking pulse */}
+        <aside
+          className={`lg:col-span-4 min-h-0 flex flex-col overflow-hidden rounded-lg border border-white/[0.06] bg-black/35 backdrop-blur-sm min-h-0 ${
+            isProBoardroom ? "p-2 gap-1" : "p-2.5 md:p-3 gap-1.5"
+          }`}
+        >
+          <h2 className={`font-semibold text-orange-200/90 shrink-0 ${isProBoardroom ? "text-base mb-1" : "text-base md:text-xl mb-1.5"}`}>
+            Breaking pulse
+          </h2>
           {breakingRows.length === 0 ? (
-            <p className="text-sm text-slate-500">Watching — no price-shock / catalyst / fast-gossip rows in the recent window.</p>
+            <p className={`text-slate-500 shrink-0 ${isProBoardroom ? "text-xs" : "text-sm"}`}>Watching — none in window.</p>
           ) : (
-            <ul className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
+            <ul className="space-y-1 overflow-hidden flex-1 min-h-0">
               {breakingRows.map((r) => (
                 <li
                   key={r.id || `${r.source}-${r.time}-${r.asset}`}
-                  className="rounded-md border border-white/[0.05] bg-white/[0.03] px-2 py-2"
+                  className={`rounded-md border border-white/[0.05] bg-white/[0.03] overflow-hidden ${
+                    isProBoardroom ? "px-1.5 py-1" : "px-2 py-1.5"
+                  }`}
                 >
-                  <div className="text-xs text-slate-500 uppercase tracking-wide">{pulseSourceLabel(r)}</div>
-                  <div className="text-base md:text-lg font-semibold text-slate-100 leading-tight">
-                    {String(r.asset || "—")} · <span className="text-slate-300 font-medium">Awareness</span> ·{" "}
-                    {String(r.call || "—")}
+                  <div className={`text-slate-500 uppercase tracking-wide ${isProBoardroom ? "text-[9px]" : "text-xs"}`}>
+                    {pulseSourceLabel(r)}
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5">
+                  <div className={`font-semibold text-slate-100 leading-tight truncate ${isProBoardroom ? "text-sm" : "text-base md:text-lg"}`}>
+                    {String(r.asset || "—")} · <span className="text-slate-300 font-medium">Awareness</span> · {String(r.call || "—")}
+                  </div>
+                  <div className={`text-slate-500 ${isProBoardroom ? "text-[10px]" : "text-xs"}`}>
                     {String(r.timeframe || r.horizon || "—")} · {formatRelativePulse(r.time)}
                   </div>
-                  <p className="text-xs md:text-sm text-slate-400 mt-1 line-clamp-2">{shortReason(r)}</p>
+                  <p className={`text-slate-400 mt-0.5 truncate ${isProBoardroom ? "text-[10px]" : "text-xs md:text-sm"}`} title={shortReason(r, reasonMax)}>
+                    {shortReason(r, reasonMax)}
+                  </p>
                 </li>
               ))}
             </ul>
@@ -469,34 +569,36 @@ export default function DisplayPage() {
       </div>
 
       {/* Semiconductors strip */}
-      <div className="relative z-10 shrink-0 border-t border-white/[0.06] bg-black/45 px-3 py-1.5 text-center text-xs md:text-base tracking-wide text-slate-300/95">
-        AI / Semiconductors watch — <span className="text-cyan-200/85 font-medium">NVDA · INTC · TSM · AVGO · MU · SMCI · SOUN</span>
+      <div
+        className={`relative z-10 shrink-0 border-t border-white/[0.06] bg-black/45 text-center tracking-wide text-slate-300/95 ${
+          isProBoardroom ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-xs md:text-base"
+        }`}
+      >
+        AI / Semiconductors — <span className="text-cyan-200/85 font-medium">NVDA · INTC · TSM · AVGO · MU · SMCI · SOUN</span>
       </div>
 
-      {/* Trial / promo footers */}
-      <footer className="relative z-10 shrink-0 border-t border-white/[0.06] bg-black/55 px-3 py-1.5 space-y-0.5">
+      <footer className={`relative z-10 shrink-0 border-t border-white/[0.06] bg-black/55 px-2 ${isProBoardroom ? "py-1" : "py-1.5"}`}>
         {visualFree ? (
-          <>
-            <div className="text-center text-amber-100/90 text-sm md:text-base font-semibold">
-              Free Display Active · Powered by SentoTrade
-            </div>
-            <div className="text-center text-slate-400 text-[11px] md:text-sm">
-              Live radar — upgrade optional. Display Pro: cleaner layout, custom branding, custom assets — $5/month{" "}
-              <span className="italic">soon</span>
-            </div>
-            <div className="text-center font-mono text-xl sm:text-2xl md:text-3xl lg:text-4xl text-cyan-300/90 py-0.5 tracking-tight">
-              sentotrade.io
-            </div>
-          </>
+          <div className="space-y-0.5">
+            <p className="text-center text-slate-100/95 text-sm md:text-[0.95rem] leading-snug">
+              Free Display Active · Powered by SentoTrade · Open full radar at{" "}
+              <span className="text-cyan-300/90 font-semibold">sentotrade.io</span>
+            </p>
+            <p className="text-center text-slate-500 text-[10px] md:text-xs">Display Pro add-ons — coming soon</p>
+          </div>
         ) : (
-          <div className="text-center space-y-0.5">
-            <div className="text-slate-500 text-xs md:text-sm">Display Pro preview</div>
+          <div className="space-y-0">
+            <p className="text-center text-slate-400 text-xs md:text-sm">Display Pro preview · Powered by SentoTrade</p>
             {tierParam === "pro" && typeof window !== "undefined" && localStorage.getItem(LS_PRO_ACTIVE) !== "true" && (
-              <div className="text-[10px] md:text-xs text-slate-600">URL layout preview — not paid activation</div>
+              <p className="text-center text-[10px] text-slate-600">URL preview — not billing</p>
             )}
           </div>
         )}
-        <p className="text-center text-[10px] md:text-xs text-slate-600 leading-snug">
+        <p
+          className={`text-center text-slate-600 leading-snug mt-0.5 ${
+            isProBoardroom ? "text-[9px] line-clamp-2" : "text-[10px] md:text-xs"
+          }`}
+        >
           Market awareness only. Not financial advice. Not a broker. Data refreshes periodically ({Math.round(SWEEP_MS / 60000)}m sweep).
         </p>
       </footer>
@@ -504,50 +606,39 @@ export default function DisplayPage() {
   );
 }
 
-type TileMode = "price" | "macro_watching";
-
-function Tile({
+function SpotTile({
   label,
   sub,
   value,
   change,
-  mode = "price",
+  dense,
 }: {
   label: string;
   sub: string;
-  value?: string | null;
-  change?: string | null;
-  mode?: TileMode;
+  value: string;
+  change: string | null;
+  dense?: boolean;
 }) {
-  if (mode === "macro_watching") {
-    return (
-      <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-2.5 py-2 flex flex-col justify-center min-h-[4rem]">
-        <div className="text-[10px] md:text-xs uppercase tracking-wider text-slate-500">{label}</div>
-        <div className="text-[10px] text-slate-600 mb-1">{sub}</div>
-        <div className="text-base md:text-2xl font-semibold text-slate-300/95 leading-tight">Watching</div>
-        <div className="text-[9px] md:text-[10px] text-slate-600 leading-snug mt-1">
-          Not on this display price feed — no number shown.
-        </div>
-      </div>
-    );
-  }
-
-  const show = !!value;
   return (
-    <div className="rounded-lg border border-white/[0.07] bg-white/[0.04] px-2.5 py-2 flex flex-col justify-center min-h-[4rem]">
-      <div className="text-[10px] md:text-xs uppercase tracking-wider text-slate-500">{label}</div>
-      <div className="text-[10px] text-slate-600 mb-0.5">{sub}</div>
-      {!show ? (
-        <div className="space-y-0.5">
-          <div className="text-base md:text-xl font-medium text-slate-400 leading-tight">Watching</div>
-          <div className="text-[9px] md:text-[10px] text-slate-600 leading-snug">No figure on last sweep.</div>
-        </div>
-      ) : (
-        <>
-          <div className="text-lg md:text-3xl font-bold tabular-nums text-slate-50 leading-none">{value}</div>
-          {change && <div className="text-[10px] md:text-sm text-slate-400 mt-0.5 tabular-nums">{change} 24h</div>}
-        </>
-      )}
+    <div
+      className={`rounded-lg border border-white/[0.08] bg-white/[0.05] flex flex-col justify-center min-h-0 ${
+        dense ? "px-2 py-2" : "px-3 py-2.5"
+      }`}
+    >
+      <div
+        className={`uppercase tracking-wider text-slate-400 font-semibold ${dense ? "text-xs" : "text-xs md:text-sm"}`}
+      >
+        {label}
+      </div>
+      <div className={`text-slate-500 ${dense ? "text-[10px]" : "text-[10px] md:text-xs"}`}>{sub}</div>
+      <div
+        className={`font-bold tabular-nums text-white leading-none ${dense ? "text-xl md:text-2xl mt-0.5" : "text-2xl md:text-4xl mt-1"}`}
+      >
+        {value}
+      </div>
+      {change ? (
+        <div className={`text-slate-400 tabular-nums mt-0.5 ${dense ? "text-[10px]" : "text-xs md:text-sm"}`}>{change} 24h</div>
+      ) : null}
     </div>
   );
 }
