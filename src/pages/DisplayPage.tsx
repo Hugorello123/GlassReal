@@ -351,9 +351,9 @@ export default function DisplayPage() {
         </div>
       )}
 
-      <header className="relative z-10 shrink-0 flex items-center justify-between gap-3 px-4 py-3 border-b border-white/[0.06] bg-black/40 backdrop-blur-sm">
+      <header className="relative z-10 shrink-0 flex items-center justify-between gap-2 px-3 py-2 md:px-4 border-b border-white/[0.06] bg-black/40 backdrop-blur-sm">
         <div className="flex items-baseline gap-3 min-w-0">
-          <span className={`text-xl md:text-2xl font-bold tracking-tight truncate ${visualFree ? "text-cyan-300/95" : "text-slate-200"}`}>
+          <span className={`text-lg md:text-2xl font-bold tracking-tight truncate ${visualFree ? "text-cyan-300/95" : "text-slate-200"}`}>
             SentoTrade Display
           </span>
           <span className="hidden sm:inline text-slate-500 text-sm md:text-base font-medium">·</span>
@@ -368,32 +368,32 @@ export default function DisplayPage() {
         </div>
       </header>
 
-      <div className="relative z-10 flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-2 px-2 py-2 lg:px-3 lg:py-3">
+      <div className="relative z-10 flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-1.5 px-2 py-1.5 lg:px-3 lg:py-2">
         {/* Left — core tiles */}
-        <aside className="lg:col-span-3 min-h-0 flex flex-col gap-2 overflow-hidden">
+        <aside className="lg:col-span-3 min-h-0 flex flex-col gap-1.5 overflow-hidden">
           <div className="text-[10px] uppercase tracking-widest text-slate-500 px-1">Spot (terminal feed)</div>
-          <div className="flex-1 grid grid-cols-2 lg:grid-cols-1 gap-2 min-h-0 auto-rows-fr">
+          <div className="flex-1 grid grid-cols-2 lg:grid-cols-1 gap-1.5 min-h-0 auto-rows-fr min-h-[8rem]">
             <Tile label="Gold" sub="XAU / GC" value={gold} change={goldCh} />
             <Tile label="Oil" sub="WTI / CL" value={oil} change={oilCh} />
-            <Tile label="DXY" sub="Dollar index" value={null} change={null} unavailable />
-            <Tile label="USD/ZAR" sub="Emerging FX" value={null} change={null} unavailable />
+            <Tile label="DXY" sub="Dollar index" mode="macro_watching" />
+            <Tile label="USD/ZAR" sub="Emerging FX" mode="macro_watching" />
             <Tile label="BTC" sub="USD" value={btc} change={btcCh} />
             <Tile label="ETH" sub="USD" value={eth} change={ethCh} />
           </div>
         </aside>
 
         {/* Center — weather / catalyst / headlines */}
-        <main className="lg:col-span-5 min-h-0 flex flex-col gap-2 overflow-hidden rounded-lg border border-white/[0.06] bg-black/35 p-3 backdrop-blur-sm">
+        <main className="lg:col-span-5 min-h-0 flex flex-col gap-1.5 overflow-hidden rounded-lg border border-white/[0.06] bg-black/35 p-2.5 md:p-3 backdrop-blur-sm">
           <div className="flex justify-between items-start gap-2 shrink-0">
-            <h2 className="text-lg md:text-xl font-semibold text-cyan-200/90">Market weather</h2>
+            <h2 className="text-base md:text-xl font-semibold text-cyan-200/90">Market weather</h2>
             <div className="text-right text-xs text-slate-500 leading-tight">
               <div>Last radar sweep: {lastSweepLabel}</div>
               {nextSweepSec != null && <div>Next sweep in {nextSweepSec}s</div>}
             </div>
           </div>
           <div className="shrink-0 flex items-baseline gap-2">
-            <span className="text-slate-500 text-sm">Gossip intensity</span>
-            <span className="text-2xl md:text-3xl font-bold text-slate-100 tabular-nums">
+            <span className="text-slate-500 text-xs md:text-sm">Gossip intensity</span>
+            <span className="text-xl md:text-3xl font-bold text-slate-100 tabular-nums">
               {gossip ? `${gossip.intensity}/10` : "—"}
             </span>
             {!gossip && <span className="text-xs text-slate-500">watching</span>}
@@ -412,7 +412,7 @@ export default function DisplayPage() {
             {catalystRows.length === 0 ? (
               <p className="text-sm text-slate-500">Watching — no catalyst-watch rows right now.</p>
             ) : (
-              <ul className="space-y-1.5 overflow-y-auto max-h-[22vh] lg:max-h-[28vh] pr-1">
+              <ul className="space-y-1 overflow-y-auto max-h-[18vh] lg:max-h-[22vh] pr-1">
                 {catalystRows.map((r) => (
                   <li key={r.id || `${r.asset}-${r.time}`} className="text-sm md:text-base leading-snug border-l-2 border-amber-500/40 pl-2">
                     <span className="text-amber-200/90 font-semibold">{String(r.asset || "—")}</span>
@@ -427,7 +427,7 @@ export default function DisplayPage() {
           <div className="flex-1 min-h-0 flex flex-col mt-1">
             <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-1 shrink-0">Headlines</h3>
             {newsHeadlines.length === 0 ? (
-              <p className="text-sm text-slate-500">Data unavailable — headlines not loaded or filtered quiet.</p>
+              <p className="text-sm text-slate-500">Watching — headlines not loaded or filtered quiet.</p>
             ) : (
               <ul className="space-y-1 overflow-y-auto flex-1 min-h-0 pr-1 text-sm md:text-base leading-snug text-slate-200/95">
                 {newsHeadlines.map((t, i) => (
@@ -441,8 +441,8 @@ export default function DisplayPage() {
         </main>
 
         {/* Right — breaking pulse list */}
-        <aside className="lg:col-span-4 min-h-0 flex flex-col overflow-hidden rounded-lg border border-white/[0.06] bg-black/35 p-3 backdrop-blur-sm">
-          <h2 className="text-lg md:text-xl font-semibold text-orange-200/90 shrink-0 mb-2">Breaking pulse</h2>
+        <aside className="lg:col-span-4 min-h-0 flex flex-col overflow-hidden rounded-lg border border-white/[0.06] bg-black/35 p-2.5 md:p-3 backdrop-blur-sm">
+          <h2 className="text-base md:text-xl font-semibold text-orange-200/90 shrink-0 mb-1.5">Breaking pulse</h2>
           {breakingRows.length === 0 ? (
             <p className="text-sm text-slate-500">Watching — no price-shock / catalyst / fast-gossip rows in the recent window.</p>
           ) : (
@@ -469,24 +469,32 @@ export default function DisplayPage() {
       </div>
 
       {/* Semiconductors strip */}
-      <div className="relative z-10 shrink-0 border-t border-white/[0.06] bg-black/45 px-4 py-2 text-center text-sm md:text-base tracking-wide text-slate-300/95">
+      <div className="relative z-10 shrink-0 border-t border-white/[0.06] bg-black/45 px-3 py-1.5 text-center text-xs md:text-base tracking-wide text-slate-300/95">
         AI / Semiconductors watch — <span className="text-cyan-200/85 font-medium">NVDA · INTC · TSM · AVGO · MU · SMCI · SOUN</span>
       </div>
 
       {/* Trial / promo footers */}
-      <footer className="relative z-10 shrink-0 border-t border-white/[0.06] bg-black/55 px-3 py-2 space-y-1">
+      <footer className="relative z-10 shrink-0 border-t border-white/[0.06] bg-black/55 px-3 py-1.5 space-y-0.5">
         {visualFree ? (
           <>
             <div className="text-center text-amber-100/90 text-sm md:text-base font-semibold">
               Free Display Active · Powered by SentoTrade
             </div>
-            <div className="text-center text-slate-400 text-xs md:text-sm">
-              Display Pro: cleaner layout, custom branding, custom assets — $5/month <span className="italic">soon</span>
+            <div className="text-center text-slate-400 text-[11px] md:text-sm">
+              Live radar — upgrade optional. Display Pro: cleaner layout, custom branding, custom assets — $5/month{" "}
+              <span className="italic">soon</span>
             </div>
-            <div className="text-center font-mono text-2xl md:text-4xl text-cyan-300/90 py-1 tracking-tight">sentotrade.io</div>
+            <div className="text-center font-mono text-xl sm:text-2xl md:text-3xl lg:text-4xl text-cyan-300/90 py-0.5 tracking-tight">
+              sentotrade.io
+            </div>
           </>
         ) : (
-          <div className="text-center text-slate-500 text-xs md:text-sm">Display Pro preview</div>
+          <div className="text-center space-y-0.5">
+            <div className="text-slate-500 text-xs md:text-sm">Display Pro preview</div>
+            {tierParam === "pro" && typeof window !== "undefined" && localStorage.getItem(LS_PRO_ACTIVE) !== "true" && (
+              <div className="text-[10px] md:text-xs text-slate-600">URL layout preview — not paid activation</div>
+            )}
+          </div>
         )}
         <p className="text-center text-[10px] md:text-xs text-slate-600 leading-snug">
           Market awareness only. Not financial advice. Not a broker. Data refreshes periodically ({Math.round(SWEEP_MS / 60000)}m sweep).
@@ -496,30 +504,48 @@ export default function DisplayPage() {
   );
 }
 
+type TileMode = "price" | "macro_watching";
+
 function Tile({
   label,
   sub,
   value,
   change,
-  unavailable,
+  mode = "price",
 }: {
   label: string;
   sub: string;
-  value: string | null;
-  change: string | null;
-  unavailable?: boolean;
+  value?: string | null;
+  change?: string | null;
+  mode?: TileMode;
 }) {
-  const show = unavailable ? false : !!value;
+  if (mode === "macro_watching") {
+    return (
+      <div className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-2.5 py-2 flex flex-col justify-center min-h-[4rem]">
+        <div className="text-[10px] md:text-xs uppercase tracking-wider text-slate-500">{label}</div>
+        <div className="text-[10px] text-slate-600 mb-1">{sub}</div>
+        <div className="text-base md:text-2xl font-semibold text-slate-300/95 leading-tight">Watching</div>
+        <div className="text-[9px] md:text-[10px] text-slate-600 leading-snug mt-1">
+          Not on this display price feed — no number shown.
+        </div>
+      </div>
+    );
+  }
+
+  const show = !!value;
   return (
-    <div className="rounded-lg border border-white/[0.07] bg-white/[0.04] px-3 py-2 flex flex-col justify-center min-h-[4.5rem]">
+    <div className="rounded-lg border border-white/[0.07] bg-white/[0.04] px-2.5 py-2 flex flex-col justify-center min-h-[4rem]">
       <div className="text-[10px] md:text-xs uppercase tracking-wider text-slate-500">{label}</div>
       <div className="text-[10px] text-slate-600 mb-0.5">{sub}</div>
-      {unavailable || !show ? (
-        <div className="text-sm md:text-lg text-slate-500 leading-tight">Data unavailable</div>
+      {!show ? (
+        <div className="space-y-0.5">
+          <div className="text-base md:text-xl font-medium text-slate-400 leading-tight">Watching</div>
+          <div className="text-[9px] md:text-[10px] text-slate-600 leading-snug">No figure on last sweep.</div>
+        </div>
       ) : (
         <>
-          <div className="text-xl md:text-3xl font-bold tabular-nums text-slate-50 leading-none">{value}</div>
-          {change && <div className="text-xs md:text-sm text-slate-400 mt-0.5 tabular-nums">{change} 24h</div>}
+          <div className="text-lg md:text-3xl font-bold tabular-nums text-slate-50 leading-none">{value}</div>
+          {change && <div className="text-[10px] md:text-sm text-slate-400 mt-0.5 tabular-nums">{change} 24h</div>}
         </>
       )}
     </div>
