@@ -1,4 +1,4 @@
-// src/pages/DisplayPage.tsx — boardroom / TV display shell (Step 27a). No mock market data.
+// src/pages/DisplayPage.tsx — TV / boardroom display (Step 27a-3). No mock market data.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { apiUrl } from "@/lib/sameOriginApi";
@@ -74,10 +74,6 @@ function isCatalystWatchRow(p: PredRow): boolean {
   return false;
 }
 
-function isBreakingPulseRow(p: PredRow): boolean {
-  return isFastPulseRow(p) || isPriceShockRow(p) || isCatalystWatchRow(p);
-}
-
 function catalystWatchThemeLabel(row: PredRow): string {
   const c = String(row.cluster || "").toLowerCase();
   if (c === "musk_intel") return "Musk / Tesla / Intel";
@@ -113,22 +109,15 @@ function formatRelativePulse(iso: string | undefined): string {
   return `${Math.round(mins / 1440)}d ago`;
 }
 
-function pulseSourceLabel(p: PredRow): string {
-  if (isPriceShockRow(p)) return "price-shock";
-  if (isCatalystWatchRow(p)) return "catalyst-watch";
-  if (isFastPulseRow(p)) return "ai-gossip-fast";
-  return "awareness";
-}
-
 function shortReason(p: PredRow, maxLen: number): string {
   let base: string;
   if (isCatalystWatchRow(p)) base = catalystWatchThemeLabel(p);
   else if (isPriceShockRow(p)) {
     const w = String(p.why || "").trim();
-    base = w || "Price pressure window — awareness.";
+    base = w || "Price pressure — awareness.";
   } else {
     const h = parseFastGossipHeadline(p.why);
-    base = h || "Headline-linked chatter — awareness.";
+    base = h || "Headline heat — awareness.";
   }
   return trimDisplayLine(base, maxLen);
 }
@@ -164,7 +153,24 @@ function fmtCh(n: unknown): string | null {
   return `${sign}${x.toFixed(2)}%`;
 }
 
+function chgToneClass(raw: unknown): string {
+  const x = Number(raw);
+  if (!Number.isFinite(x)) return "text-slate-500";
+  if (x > 0) return "text-emerald-400 font-semibold";
+  if (x < 0) return "text-red-400 font-semibold";
+  return "text-slate-400";
+}
+
 type PricesState = Record<string, unknown> | null;
+
+type CatalystGroup = {
+  cluster: string;
+  theme: string;
+  assets: string;
+  window: string;
+  rel: string;
+  _ts: number;
+};
 
 export default function DisplayPage() {
   const [searchParams] = useSearchParams();
@@ -192,9 +198,7 @@ export default function DisplayPage() {
     return lifecycle === "FREE_BILLBOARD";
   }, [tierParam, lifecycle]);
 
-  /** Pro-style layout: boardroom density, minimal promo (not Free billboard). */
   const isProBoardroom = !visualFree;
-
   const showWarningBanner = tierParam === "auto" && lifecycle === "PRO_WARNING";
 
   const daysElapsed = typeof window !== "undefined" ? daysElapsedTrial() : 0;
@@ -230,9 +234,7 @@ export default function DisplayPage() {
       fetch(apiUrl("/api/news"), { cache: "no-store" }).catch(() => null),
       fetch(apiUrl("/api/gossip"), { cache: "no-store" }).catch(() => null),
     ]);
-    const [predP] = await Promise.all([
-      fetch(apiUrl("/api/predictions?limit=50"), { cache: "no-store" }).catch(() => null),
-    ]);
+    const predP = await fetch(apiUrl("/api/predictions?limit=50"), { cache: "no-store" }).catch(() => null);
 
     if (hp?.ok) {
       try {
@@ -255,8 +257,7 @@ export default function DisplayPage() {
     if (predP?.ok) {
       try {
         const j = await predP.json();
-        const items: PredRow[] = Array.isArray(j.items) ? j.items : [];
-        setPredictions(items);
+        setPredictions(Array.isArray(j.items) ? j.items : []);
       } catch {
         setPredictions([]);
       }
@@ -309,20 +310,41 @@ export default function DisplayPage() {
     return Math.max(0, Math.ceil(rem / 1000));
   }, [lastSweepAt, tick]);
 
-  const catalystRows = useMemo(() => {
-    const cap = isProBoardroom ? 4 : 5;
-    return predictions
-      .filter(isCatalystWatchRow)
-      .sort((a, b) => (Date.parse(String(b.time || "")) || 0) - (Date.parse(String(a.time || "")) || 0))
-      .slice(0, cap);
-  }, [predictions, isProBoardroom]);
+  /** One ribbon per cluster — avoids repeating the same catalyst story on four cards. */
+  const catalystGroups = useMemo((): CatalystGroup[] => {
+    const rows = predictions.filter(isCatalystWatchRow);
+    const by = new Map<string, PredRow[]>();
+    for (const r of rows) {
+      const k = String(r.cluster || "default");
+      if (!by.has(k)) by.set(k, []);
+      by.get(k)!.push(r);
+    }
+    const out: CatalystGroup[] = [];
+    for (const [, list] of by) {
+      list.sort((a, b) => (Date.parse(String(b.time || "")) || 0) - (Date.parse(String(a.time || "")) || 0));
+      const head = list[0];
+      const assets = [...new Set(list.map((x) => String(x.asset || "").trim()).filter(Boolean))];
+      if (!assets.length) continue;
+      const t0 = Date.parse(String(head.time || "")) || 0;
+      out.push({
+        cluster: String(head.cluster || ""),
+        theme: catalystWatchThemeLabel(head),
+        assets: assets.join(" · "),
+        window: String(head.timeframe || head.horizon || "—"),
+        rel: formatRelativePulse(head.time),
+        _ts: t0,
+      });
+    }
+    out.sort((a, b) => b._ts - a._ts);
+    return out.slice(0, 4);
+  }, [predictions]);
 
-  const breakingRows = useMemo(() => {
-    const cap = isProBoardroom ? 4 : 5;
+  /** Pulse strip: price-shock + fast gossip only — catalyst lives in the ribbon above. */
+  const pulseRows = useMemo(() => {
     return predictions
-      .filter(isBreakingPulseRow)
+      .filter((r) => isPriceShockRow(r) || isFastPulseRow(r))
       .sort((a, b) => (Date.parse(String(b.time || "")) || 0) - (Date.parse(String(a.time || "")) || 0))
-      .slice(0, cap);
+      .slice(0, isProBoardroom ? 4 : 5);
   }, [predictions, isProBoardroom]);
 
   const newsHeadlines = useMemo(() => {
@@ -332,273 +354,212 @@ export default function DisplayPage() {
       .slice(0, cap)
       .map((a) => String(a.title || "").trim())
       .filter(Boolean)
-      .map((t) => trimDisplayLine(t, isProBoardroom ? 72 : 96));
+      .map((t) => trimDisplayLine(t, isProBoardroom ? 100 : 120));
   }, [newsArticles, isProBoardroom]);
 
   const p = prices && typeof prices === "object" ? prices : null;
-  const btc = p ? fmtUsd(p.btc) : null;
-  const eth = p ? fmtUsd(p.eth) : null;
-  const gold = p ? fmtUsd(p.gold) : null;
-  const oil = p ? fmtUsd(p.oil) : null;
-  const btcCh = p ? fmtCh(p.btcCh) : null;
-  const ethCh = p ? fmtCh(p.ethCh) : null;
-  const goldCh = p ? fmtCh(p.goldCh) : null;
-  const oilCh = p ? fmtCh(p.oilCh) : null;
-
-  const spotSlots = useMemo(() => {
-    const rows = [
-      { key: "gold", label: "Gold", sub: "XAU / GC", value: gold, change: goldCh },
-      { key: "oil", label: "Oil", sub: "WTI / CL", value: oil, change: oilCh },
-      { key: "btc", label: "BTC", sub: "USD", value: btc, change: btcCh },
-      { key: "eth", label: "ETH", sub: "USD", value: eth, change: ethCh },
-    ];
-    return rows.filter((r): r is (typeof rows)[number] & { value: string } => r.value != null && r.value !== "");
-  }, [gold, oil, btc, eth, goldCh, oilCh, btcCh, ethCh]);
+  const spotDefs = [
+    { key: "gold", label: "Gold", sub: "XAU / GC", raw: p?.gold, rawCh: p?.goldCh },
+    { key: "oil", label: "Oil", sub: "WTI / CL", raw: p?.oil, rawCh: p?.oilCh },
+    { key: "btc", label: "BTC", sub: "USD", raw: p?.btc, rawCh: p?.btcCh },
+    { key: "eth", label: "ETH", sub: "USD", raw: p?.eth, rawCh: p?.ethCh },
+  ] as const;
 
   const statusColor =
-    healthOk === true ? "bg-emerald-500/90 shadow-[0_0_12px_rgba(16,185,129,0.35)]" : healthOk === false ? "bg-amber-500/80" : "bg-slate-500/60";
-
-  const reasonMax = isProBoardroom ? 52 : 72;
+    healthOk === true ? "bg-emerald-500" : healthOk === false ? "bg-amber-500" : "bg-slate-500";
 
   return (
     <div
-      className="relative min-h-0 h-[100dvh] w-full overflow-hidden text-slate-100 flex flex-col"
-      style={{ background: "#070809" }}
+      className="relative min-h-0 h-[100dvh] w-full overflow-hidden text-slate-100 flex flex-col bg-[#070809]"
     >
-      {/* Burn-in: slow drifting gradient (no bright static blocks) */}
+      {/* Masks global VoiceAvatar (fixed top-20 left-4 z-50) — TV artifact removal; blocks stray UI on this route only */}
       <div
-        className="pointer-events-none fixed inset-0 opacity-[0.07] z-0"
+        className="fixed top-20 left-4 z-[100] h-11 w-11 rounded-md bg-[#070809] border border-white/[0.04] pointer-events-auto shadow-none"
+        aria-hidden
+        title=""
+      />
+
+      {/* Burn-in: static very low-opacity wash only (no animated blobs that read as defects) */}
+      <div
+        className="pointer-events-none fixed inset-0 z-0 opacity-[0.04]"
         style={{
           background:
-            "radial-gradient(ellipse 80% 60% at 20% 30%, rgba(34,211,238,0.5), transparent 55%), radial-gradient(ellipse 70% 50% at 80% 70%, rgba(99,102,241,0.45), transparent 50%)",
-          animation: "displayAmbient 48s ease-in-out infinite alternate",
+            "radial-gradient(ellipse 100% 80% at 50% 0%, rgba(34,211,238,0.35), transparent 50%), radial-gradient(ellipse 80% 60% at 100% 100%, rgba(180,83,9,0.12), transparent 45%)",
         }}
       />
-      <style>{`@keyframes displayAmbient { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(2%,-1%) scale(1.03); } }`}</style>
 
-      {/* Warning-phase banner */}
       {showWarningBanner && (
-        <div className="relative z-20 shrink-0 border-b border-amber-500/25 bg-amber-950/35 px-3 py-1.5 text-center text-xs md:text-sm text-amber-100/95">
-          Display Pro preview ends in {daysLeftPro} day{daysLeftPro === 1 ? "" : "s"}. Scan or open{" "}
-          <span className="font-semibold text-cyan-200/90">sentotrade.io</span> to keep this layout.
+        <div className="relative z-20 shrink-0 border-b border-amber-500/30 bg-amber-950/40 px-3 py-1.5 text-center text-sm text-amber-100">
+          Display Pro preview ends in {daysLeftPro} day{daysLeftPro === 1 ? "" : "s"}. Open{" "}
+          <span className="font-semibold text-cyan-300">sentotrade.io</span> to keep this layout.
         </div>
       )}
 
       <header
-        className={`relative z-10 shrink-0 flex items-center justify-between gap-2 px-3 border-b border-white/[0.06] bg-black/40 backdrop-blur-sm ${
-          isProBoardroom ? "py-1.5" : "py-2 md:px-4"
+        className={`relative z-10 shrink-0 flex items-center justify-between border-b border-white/[0.08] bg-black/50 px-4 ${
+          isProBoardroom ? "py-2" : "py-2.5"
         }`}
       >
         <div className="flex items-baseline gap-2 min-w-0">
           <span
             className={`font-bold tracking-tight truncate ${
-              visualFree ? "text-xl md:text-2xl text-cyan-300/95" : "text-base md:text-lg text-slate-100 font-semibold"
+              visualFree ? "text-xl text-cyan-300" : "text-lg text-slate-100"
             }`}
           >
             SentoTrade Display
           </span>
-          <span
-            className={`hidden sm:inline font-medium whitespace-nowrap ${
-              isProBoardroom ? "text-[11px] text-slate-500" : "text-slate-400 text-sm md:text-base"
-            }`}
-          >
-            {isProBoardroom ? "· Radar" : "· Market Weather"}
-          </span>
+          <span className="hidden md:inline text-slate-500 text-sm">{isProBoardroom ? "· Radar" : "· TV"}</span>
         </div>
-        <div className={`flex items-center gap-2 shrink-0 tabular-nums text-slate-300 ${isProBoardroom ? "text-sm" : "text-sm md:text-base"}`}>
+        <div className="flex items-center gap-3 text-slate-200 tabular-nums text-base">
           <time dateTime={clock.toISOString()}>
             {clock.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           </time>
-          <span className={`inline-block h-2.5 w-2.5 rounded-full ${statusColor}`} title={healthOk ? "Radar online" : "Radar degraded"} />
-          <span
-            className={`hidden lg:inline text-slate-500 truncate ${isProBoardroom ? "text-[10px] max-w-[7rem]" : "text-xs max-w-[10rem]"}`}
-          >
-            {isProBoardroom ? "SentoTrade" : "Powered by SentoTrade"}
-          </span>
+          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${statusColor}`} title={healthOk ? "Online" : "Degraded"} />
         </div>
       </header>
 
-      <div className="relative z-10 flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-1.5 px-2 py-1 lg:px-3 lg:py-1.5 min-h-0">
-        {/* Left — spot tiles only when /api/prices returned a real figure */}
-        <aside className="lg:col-span-3 min-h-0 flex flex-col gap-1 overflow-hidden">
-          <div
-            className={`uppercase tracking-widest text-slate-500 px-1 shrink-0 font-semibold ${
-              isProBoardroom ? "text-[10px]" : "text-[11px]"
-            }`}
-          >
-            Spot (/api/prices)
+      {/* TV grid: left stacked spots · right command deck */}
+      <div className="relative z-10 flex-1 min-h-0 flex flex-col lg:flex-row gap-3 px-3 py-2 lg:px-4 lg:py-3">
+        {/* Left — four stacked large tiles */}
+        <section className="flex shrink-0 flex-col gap-2 lg:w-[min(26%,320px)] lg:min-w-[220px] lg:flex-initial lg:max-h-full">
+          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-amber-200/70">Spot · /api/prices</div>
+          <div className="grid min-h-0 flex-1 grid-rows-4 gap-2 lg:min-h-0">
+            {spotDefs.map((def) => {
+              const val = fmtUsd(def.raw);
+              const ch = fmtCh(def.rawCh);
+              return (
+                <BigSpotTile
+                  key={def.key}
+                  label={def.label}
+                  sub={def.sub}
+                  value={val}
+                  changeStr={ch}
+                  changeRaw={def.rawCh}
+                  compact={isProBoardroom}
+                />
+              );
+            })}
           </div>
-          {spotSlots.length === 0 ? (
-            <div className="flex-1 min-h-0 flex items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.02] px-2 py-3">
-              <p className="text-center text-sm text-slate-500 leading-snug">Watching · no spot quotes on last sweep.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2 flex-1 min-h-0 auto-rows-fr content-start">
-              {spotSlots.map((s, idx) => (
-                <div
-                  key={s.key}
-                  className={
-                    spotSlots.length === 1
-                      ? "col-span-2"
-                      : spotSlots.length === 3 && idx === 2
-                        ? "col-span-2 max-w-lg mx-auto w-full"
-                        : ""
-                  }
-                >
-                  <SpotTile label={s.label} sub={s.sub} value={s.value} change={s.change} dense={isProBoardroom} />
-                </div>
-              ))}
-            </div>
-          )}
-        </aside>
+        </section>
 
-        {/* Center — weather / catalyst / headlines (no scrollbars — clipped lists) */}
-        <main
-          className={`lg:col-span-5 min-h-0 flex flex-col overflow-hidden rounded-lg border border-white/[0.06] bg-black/35 backdrop-blur-sm min-h-0 ${
-            isProBoardroom ? "gap-1 p-2" : "gap-1.5 p-2.5 md:p-3"
-          }`}
-        >
-          <div className="flex justify-between items-start gap-2 shrink-0">
-            <h2 className={`font-semibold text-cyan-200/90 ${isProBoardroom ? "text-base" : "text-base md:text-xl"}`}>Market weather</h2>
-            <div className={`text-right text-slate-500 leading-tight shrink-0 ${isProBoardroom ? "text-[10px]" : "text-xs"}`}>
+        {/* Command panel — gossip hero + catalyst + headlines + pulse (no duplicate catalyst-watch labels) */}
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-cyan-500/15 bg-black/40 px-4 py-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
+          <div className="mb-3 flex shrink-0 items-end justify-between gap-3 border-b border-white/[0.06] pb-2">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-cyan-300/80">Gossip intensity</div>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-5xl font-black tabular-nums leading-none text-white lg:text-6xl">
+                  {gossip ? gossip.intensity : "—"}
+                </span>
+                <span className="pb-1 text-2xl font-semibold text-slate-500">/10</span>
+              </div>
+            </div>
+            <div className="text-right text-xs leading-tight text-slate-500">
               <div>Sweep {lastSweepLabel}</div>
-              {nextSweepSec != null && <div>Next {nextSweepSec}s</div>}
+              {nextSweepSec != null && <div className="text-cyan-600/80">Next {nextSweepSec}s</div>}
             </div>
           </div>
-          <div className="shrink-0 flex items-baseline gap-2">
-            <span className={`text-slate-500 ${isProBoardroom ? "text-xs" : "text-xs md:text-sm"}`}>Gossip intensity</span>
-            <span className={`font-bold text-slate-100 tabular-nums ${isProBoardroom ? "text-2xl" : "text-xl md:text-3xl"}`}>
-              {gossip ? `${gossip.intensity}/10` : "—"}
-            </span>
-            {!gossip && <span className="text-xs text-slate-500">watching</span>}
-          </div>
+
           {gossip && gossip.spywords.length > 0 && (
-            <div className="flex flex-wrap gap-1 shrink-0 overflow-hidden">
-              {gossip.spywords.slice(0, isProBoardroom ? 6 : 8).map((w, i) => (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {gossip.spywords.slice(0, 10).map((w, i) => (
                 <span
                   key={i}
-                  className={`rounded-full bg-cyan-500/10 text-cyan-300/90 border border-cyan-500/15 ${
-                    isProBoardroom ? "text-[10px] px-1.5 py-0.5" : "text-xs px-2 py-0.5"
-                  }`}
+                  className="rounded-md border border-amber-500/25 bg-amber-950/30 px-3 py-1 text-sm font-semibold uppercase tracking-wide text-amber-100"
                 >
                   {w}
                 </span>
               ))}
             </div>
           )}
-          <div className="shrink-0 min-h-0 overflow-hidden">
-            <h3 className={`uppercase tracking-wider text-slate-500 mb-0.5 ${isProBoardroom ? "text-[10px]" : "text-xs"}`}>
-              Catalyst watch
-            </h3>
-            {catalystRows.length === 0 ? (
-              <p className={`text-slate-500 ${isProBoardroom ? "text-xs" : "text-sm"}`}>Watching — none right now.</p>
+
+          <div className="mb-2 shrink-0">
+            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-amber-200/80">Catalyst watch</div>
+            {catalystGroups.length === 0 ? (
+              <p className="mt-1 text-base text-slate-500">Watching — no catalyst cluster on the wire.</p>
             ) : (
-              <ul className="space-y-0.5 overflow-hidden">
-                {catalystRows.map((r) => (
+              <ul className="mt-2 space-y-2">
+                {catalystGroups.map((g) => (
                   <li
-                    key={r.id || `${r.asset}-${r.time}`}
-                    className={`leading-tight border-l-2 border-amber-500/40 pl-2 text-slate-200 truncate ${
-                      isProBoardroom ? "text-xs" : "text-sm md:text-base"
-                    }`}
-                    title={`${String(r.asset || "—")} — ${catalystWatchThemeLabel(r)}`}
+                    key={g.cluster}
+                    className="rounded-lg border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-lg leading-snug text-amber-50"
                   >
-                    <span className="text-amber-200/90 font-semibold">{String(r.asset || "—")}</span>
-                    <span className="text-slate-500"> · </span>
-                    <span className="text-slate-300">{trimDisplayLine(catalystWatchThemeLabel(r), isProBoardroom ? 36 : 48)}</span>
-                    <span className="text-slate-500"> · {formatRelativePulse(r.time)}</span>
+                    <span className="font-bold text-amber-200">{g.assets}</span>
+                    <span className="text-amber-100/70"> — </span>
+                    <span className="text-slate-200">{g.theme}</span>
+                    <span className="text-slate-500"> · {g.window} · {g.rel}</span>
                   </li>
                 ))}
               </ul>
             )}
           </div>
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden mt-0.5">
-            <h3 className={`uppercase tracking-wider text-slate-500 mb-0.5 shrink-0 ${isProBoardroom ? "text-[10px]" : "text-xs"}`}>
-              Headlines
-            </h3>
+
+          <div className="min-h-0 shrink-0 overflow-hidden border-t border-white/[0.06] py-2">
+            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Headlines</div>
             {newsHeadlines.length === 0 ? (
-              <p className={`text-slate-500 shrink-0 ${isProBoardroom ? "text-xs" : "text-sm"}`}>Watching — none right now.</p>
+              <p className="mt-1 text-base text-slate-500">Watching — none right now.</p>
             ) : (
-              <ul className={`space-y-0.5 overflow-hidden text-slate-200/95 ${isProBoardroom ? "text-xs" : "text-sm md:text-base"}`}>
+              <ul className="mt-2 space-y-2">
                 {newsHeadlines.map((t, i) => (
-                  <li key={i} className="leading-snug truncate" title={t}>
-                    · {t}
+                  <li key={i} className="text-lg leading-snug text-slate-100 line-clamp-2">
+                    <span className="text-cyan-500/80">▸</span> {t}
                   </li>
                 ))}
               </ul>
             )}
           </div>
-        </main>
 
-        {/* Right — breaking pulse */}
-        <aside
-          className={`lg:col-span-4 min-h-0 flex flex-col overflow-hidden rounded-lg border border-white/[0.06] bg-black/35 backdrop-blur-sm min-h-0 ${
-            isProBoardroom ? "p-2 gap-1" : "p-2.5 md:p-3 gap-1.5"
-          }`}
-        >
-          <h2 className={`font-semibold text-orange-200/90 shrink-0 ${isProBoardroom ? "text-base mb-1" : "text-base md:text-xl mb-1.5"}`}>
-            Breaking pulse
-          </h2>
-          {breakingRows.length === 0 ? (
-            <p className={`text-slate-500 shrink-0 ${isProBoardroom ? "text-xs" : "text-sm"}`}>Watching — none in window.</p>
-          ) : (
-            <ul className="space-y-1 overflow-hidden flex-1 min-h-0">
-              {breakingRows.map((r) => (
-                <li
-                  key={r.id || `${r.source}-${r.time}-${r.asset}`}
-                  className={`rounded-md border border-white/[0.05] bg-white/[0.03] overflow-hidden ${
-                    isProBoardroom ? "px-1.5 py-1" : "px-2 py-1.5"
-                  }`}
-                >
-                  <div className={`text-slate-500 uppercase tracking-wide ${isProBoardroom ? "text-[9px]" : "text-xs"}`}>
-                    {pulseSourceLabel(r)}
-                  </div>
-                  <div className={`font-semibold text-slate-100 leading-tight truncate ${isProBoardroom ? "text-sm" : "text-base md:text-lg"}`}>
-                    {String(r.asset || "—")} · <span className="text-slate-300 font-medium">Awareness</span> · {String(r.call || "—")}
-                  </div>
-                  <div className={`text-slate-500 ${isProBoardroom ? "text-[10px]" : "text-xs"}`}>
-                    {String(r.timeframe || r.horizon || "—")} · {formatRelativePulse(r.time)}
-                  </div>
-                  <p className={`text-slate-400 mt-0.5 truncate ${isProBoardroom ? "text-[10px]" : "text-xs md:text-sm"}`} title={shortReason(r, reasonMax)}>
-                    {shortReason(r, reasonMax)}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </aside>
-      </div>
-
-      {/* Semiconductors strip */}
-      <div
-        className={`relative z-10 shrink-0 border-t border-white/[0.06] bg-black/45 text-center tracking-wide text-slate-300/95 ${
-          isProBoardroom ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-xs md:text-base"
-        }`}
-      >
-        AI / Semiconductors — <span className="text-cyan-200/85 font-medium">NVDA · INTC · TSM · AVGO · MU · SMCI · SOUN</span>
-      </div>
-
-      <footer className={`relative z-10 shrink-0 border-t border-white/[0.06] bg-black/55 px-2 ${isProBoardroom ? "py-1" : "py-1.5"}`}>
-        {visualFree ? (
-          <div className="space-y-0.5">
-            <p className="text-center text-slate-100/95 text-sm md:text-[0.95rem] leading-snug">
-              Free Display Active · Powered by SentoTrade · Open full radar at{" "}
-              <span className="text-cyan-300/90 font-semibold">sentotrade.io</span>
-            </p>
-            <p className="text-center text-slate-500 text-[10px] md:text-xs">Display Pro add-ons — coming soon</p>
+          <div className="mt-auto min-h-0 flex-1 overflow-hidden border-t border-white/[0.06] pt-2">
+            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-orange-300/80">Breaking pulse</div>
+            {pulseRows.length === 0 ? (
+              <p className="mt-1 text-base text-slate-500">Watching — no price-shock or fast-gossip rows.</p>
+            ) : (
+              <ul className="mt-2 space-y-2 overflow-hidden">
+                {pulseRows.map((r) => (
+                  <li
+                    key={r.id || `${r.source}-${r.time}`}
+                    className="rounded-lg border border-orange-500/20 bg-orange-950/15 px-3 py-2"
+                  >
+                    <div className="text-lg font-bold leading-tight text-orange-100">
+                      {isPriceShockRow(r) ? "Price shock" : "Headline heat"}{" "}
+                      <span className="text-slate-300">·</span> {String(r.asset || "—")}{" "}
+                      <span className="text-slate-400">·</span> {String(r.call || "—")}
+                    </div>
+                    <div className="mt-0.5 text-sm text-slate-500">
+                      {String(r.timeframe || r.horizon || "—")} · {formatRelativePulse(r.time)}
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-base text-slate-300">{shortReason(r, 140)}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
+        </section>
+      </div>
+
+      {/* Full-width ticker */}
+      <div className="relative z-10 shrink-0 border-t border-cyan-500/20 bg-black/60 py-3 text-center">
+        <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">AI / Semiconductors</div>
+        <div className="mt-1 text-xl font-semibold tracking-[0.12em] text-cyan-200 md:text-2xl">
+          NVDA · INTC · TSM · AVGO · MU · SMCI · SOUN
+        </div>
+      </div>
+
+      <footer className="relative z-10 shrink-0 border-t border-white/[0.06] bg-black/60 px-3 py-2">
+        {visualFree ? (
+          <p className="text-center text-sm text-slate-100 md:text-base">
+            Free Display Active · Powered by SentoTrade · Open full radar at{" "}
+            <span className="font-semibold text-cyan-300">sentotrade.io</span>
+          </p>
         ) : (
-          <div className="space-y-0">
-            <p className="text-center text-slate-400 text-xs md:text-sm">Display Pro preview · Powered by SentoTrade</p>
+          <div>
+            <p className="text-center text-sm text-slate-400">Display Pro preview · Powered by SentoTrade</p>
             {tierParam === "pro" && typeof window !== "undefined" && localStorage.getItem(LS_PRO_ACTIVE) !== "true" && (
               <p className="text-center text-[10px] text-slate-600">URL preview — not billing</p>
             )}
           </div>
         )}
-        <p
-          className={`text-center text-slate-600 leading-snug mt-0.5 ${
-            isProBoardroom ? "text-[9px] line-clamp-2" : "text-[10px] md:text-xs"
-          }`}
-        >
+        <p className="mt-1 text-center text-[10px] text-slate-600 leading-snug md:text-[11px]">
           Market awareness only. Not financial advice. Not a broker. Data refreshes periodically ({Math.round(SWEEP_MS / 60000)}m sweep).
         </p>
       </footer>
@@ -606,39 +567,39 @@ export default function DisplayPage() {
   );
 }
 
-function SpotTile({
+function BigSpotTile({
   label,
   sub,
   value,
-  change,
-  dense,
+  changeStr,
+  changeRaw,
+  compact,
 }: {
   label: string;
   sub: string;
-  value: string;
-  change: string | null;
-  dense?: boolean;
+  value: string | null;
+  changeStr: string | null;
+  changeRaw: unknown;
+  compact?: boolean;
 }) {
   return (
-    <div
-      className={`rounded-lg border border-white/[0.08] bg-white/[0.05] flex flex-col justify-center min-h-0 ${
-        dense ? "px-2 py-2" : "px-3 py-2.5"
-      }`}
-    >
-      <div
-        className={`uppercase tracking-wider text-slate-400 font-semibold ${dense ? "text-xs" : "text-xs md:text-sm"}`}
-      >
-        {label}
-      </div>
-      <div className={`text-slate-500 ${dense ? "text-[10px]" : "text-[10px] md:text-xs"}`}>{sub}</div>
-      <div
-        className={`font-bold tabular-nums text-white leading-none ${dense ? "text-xl md:text-2xl mt-0.5" : "text-2xl md:text-4xl mt-1"}`}
-      >
-        {value}
-      </div>
-      {change ? (
-        <div className={`text-slate-400 tabular-nums mt-0.5 ${dense ? "text-[10px]" : "text-xs md:text-sm"}`}>{change} 24h</div>
-      ) : null}
+    <div className="flex min-h-0 flex-1 flex-col justify-center rounded-xl border border-white/[0.1] bg-gradient-to-b from-white/[0.07] to-black/40 px-3 py-2">
+      <div className={`font-bold uppercase tracking-[0.15em] text-amber-200/90 ${compact ? "text-xs" : "text-sm"}`}>{label}</div>
+      <div className="text-[11px] text-slate-500">{sub}</div>
+      {value ? (
+        <>
+          <div className={`mt-1 font-black tabular-nums leading-none text-white ${compact ? "text-3xl" : "text-3xl lg:text-4xl"}`}>
+            {value}
+          </div>
+          {changeStr ? (
+            <div className={`mt-1 tabular-nums ${compact ? "text-sm" : "text-base"} ${chgToneClass(changeRaw)}`}>
+              {changeStr} <span className="text-slate-500 font-normal">24h</span>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="mt-2 text-lg text-slate-500">Watching</div>
+      )}
     </div>
   );
 }
