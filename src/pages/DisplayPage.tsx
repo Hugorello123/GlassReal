@@ -1,13 +1,14 @@
-// src/pages/DisplayPage.tsx — TV / boardroom display (Step 27a-3). No mock market data.
+// src/pages/DisplayPage.tsx — Flagship /#/display: full-viewport boardroom grid, ambient TV chart, SVG 24h trends (from sweep prices only).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
+import TvEmbed from "@/components/TvEmbed";
 import { apiUrl } from "@/lib/sameOriginApi";
 
 const LS_DEVICE = "sento_display_device_id";
 const LS_TRIAL_START = "sento_display_trial_started";
 const LS_PRO_ACTIVE = "sento_display_pro_active";
 const SWEEP_MS = 60_000;
-/** Fresh catalyst callout in Breaking pulse (ribbon still lists all clusters). */
+const TV_ROTATE_MS = 60_000;
 const ACTIVE_CATALYST_FRESH_MS = 15 * 60 * 1000;
 
 type PredRow = {
@@ -20,11 +21,19 @@ type PredRow = {
   call?: string;
   timeframe?: string;
   horizon?: string;
-  shockSeverity?: string;
   shockMovePct?: number;
 };
 
 type DisplayLifecycle = "PRO_PREVIEW" | "PRO_WARNING" | "FREE_BILLBOARD";
+
+type CatalystGroup = {
+  cluster: string;
+  theme: string;
+  assets: string;
+  window: string;
+  rel: string;
+  _ts: number;
+};
 
 function randDeviceId(): string {
   const u = globalThis.crypto?.randomUUID?.();
@@ -111,17 +120,14 @@ function formatRelativePulse(iso: string | undefined): string {
   return `${Math.round(mins / 1440)}d ago`;
 }
 
-function shortReason(p: PredRow, maxLen: number): string {
-  let base: string;
-  if (isCatalystWatchRow(p)) base = catalystWatchThemeLabel(p);
-  else if (isPriceShockRow(p)) {
+function pulseWhyLine(p: PredRow): string {
+  if (isPriceShockRow(p)) {
     const w = String(p.why || "").trim();
-    base = w || "Price pressure — awareness.";
-  } else {
-    const h = parseFastGossipHeadline(p.why);
-    base = h || "Headline heat — awareness.";
+    const pm = Number(p.shockMovePct);
+    if (Number.isFinite(pm)) return `Shock ≈ ${Math.abs(pm).toFixed(2)}% vs model threshold.`;
+    return w || "Price dislocation flagged on the feed.";
   }
-  return trimDisplayLine(base, maxLen);
+  return parseFastGossipHeadline(p.why) || "Headline velocity on fast gossip channel.";
 }
 
 function trimDisplayLine(s: string, max: number): string {
@@ -158,21 +164,93 @@ function fmtCh(n: unknown): string | null {
 function chgToneClass(raw: unknown): string {
   const x = Number(raw);
   if (!Number.isFinite(x)) return "text-slate-500";
-  if (x > 0) return "text-emerald-400 font-semibold";
-  if (x < 0) return "text-red-400 font-semibold";
-  return "text-slate-400";
+  if (x > 0.05) return "text-emerald-400 font-semibold";
+  if (x < -0.05) return "text-red-400 font-semibold";
+  return "text-amber-300/90 font-semibold";
+}
+
+function chgBarClass(raw: unknown): string {
+  const x = Number(raw);
+  if (!Number.isFinite(x)) return "bg-slate-600/60";
+  if (x > 0.05) return "bg-emerald-500";
+  if (x < -0.05) return "bg-red-500";
+  return "bg-amber-500/80";
+}
+
+function gossipBand(n: number | null): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  if (n >= 7) return "High";
+  if (n >= 4) return "Medium";
+  return "Low";
+}
+
+function buildMarketReadTwoLines(input: {
+  intensity: number | null;
+  topCluster: string | null;
+  topTheme: string | null;
+}): [string, string] {
+  const { intensity, topCluster, topTheme } = input;
+  let line1 = "Low heat · Watching spots and headlines.";
+  if (typeof intensity === "number" && Number.isFinite(intensity)) {
+    if (intensity >= 7) line1 = `High heat · Gossip ${intensity}/10 — many concurrent threads.`;
+    else if (intensity >= 4) line1 = `Moderate heat · Gossip ${intensity}/10 on the wire.`;
+    else line1 = `Low heat · Gossip ${intensity}/10 — routine scan band.`;
+  }
+  let line2 = "No highlighted catalyst cluster on this sweep.";
+  const c = (topCluster || "").toLowerCase();
+  if (c === "us_china_trade" || c.includes("us_china") || c.includes("china")) {
+    line2 = "US–China trade cluster active on the wire.";
+  } else if (topTheme && topCluster) {
+    line2 = trimDisplayLine(`${topTheme} — cluster ${topCluster} active.`, 110);
+  }
+  return [trimDisplayLine(line1, 95), trimDisplayLine(line2, 95)];
+}
+
+/** 24h path from last price + 24h % only — no extra HTTP. Stroke tuned for TV distance viewing. */
+function MiniAreaTrendSvg({ gid, price, chPct }: { gid: string; price: number; chPct: number }) {
+  const n = 18;
+  const start = price / (1 + chPct / 100);
+  let minV = Math.min(start, price);
+  let maxV = Math.max(start, price);
+  const span = maxV - minV || Math.abs(price) * 1e-6 || 1;
+  const pad = span * 0.12;
+  minV -= pad;
+  maxV += pad;
+  const pts: { x: number; y: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const v = start + (price - start) * t;
+    const x = (i / (n - 1)) * 100;
+    const y = 36 - ((v - minV) / (maxV - minV)) * 28 - 4;
+    pts.push({ x, y });
+  }
+  const lineD = pts.map((pt, i) => `${i === 0 ? "M" : "L"}${pt.x.toFixed(2)},${pt.y.toFixed(2)}`).join(" ");
+  const areaD = `${lineD} L100,40 L0,40 Z`;
+  const up = chPct >= 0;
+  const stroke = up ? "#5eead4" : "#fb7185";
+  const g0 = up ? "#14b8a6" : "#ef4444";
+  return (
+    <svg viewBox="0 0 100 40" className="h-10 w-[118px] shrink-0" preserveAspectRatio="none" aria-hidden>
+      <defs>
+        <linearGradient id={`a-${gid}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={g0} stopOpacity="0.72" />
+          <stop offset="100%" stopColor={g0} stopOpacity="0.06" />
+        </linearGradient>
+      </defs>
+      <path d={areaD} fill={`url(#a-${gid})`} />
+      <path
+        d={lineD}
+        fill="none"
+        stroke={stroke}
+        strokeWidth="2.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 type PricesState = Record<string, unknown> | null;
-
-type CatalystGroup = {
-  cluster: string;
-  theme: string;
-  assets: string;
-  window: string;
-  rel: string;
-  _ts: number;
-};
 
 export default function DisplayPage() {
   const [searchParams] = useSearchParams();
@@ -194,6 +272,8 @@ export default function DisplayPage() {
     headlines: { title: string; url: string }[];
   } | null>(null);
 
+  const [tvSymbol, setTvSymbol] = useState<"FOREXCOM:XAUUSD" | "BINANCE:BTCUSDT">("FOREXCOM:XAUUSD");
+
   const visualFree = useMemo(() => {
     if (tierParam === "free") return true;
     if (tierParam === "pro") return false;
@@ -202,9 +282,21 @@ export default function DisplayPage() {
 
   const isProBoardroom = !visualFree;
   const showWarningBanner = tierParam === "auto" && lifecycle === "PRO_WARNING";
+  const showUpgradeStrip = visualFree || showWarningBanner;
 
   const daysElapsed = typeof window !== "undefined" ? daysElapsedTrial() : 0;
   const daysLeftPro = Math.max(1, 31 - daysElapsed);
+
+  useEffect(() => {
+    const ob = document.body.style.overflow;
+    const oh = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = ob;
+      document.documentElement.style.overflow = oh;
+    };
+  }, []);
 
   useEffect(() => {
     ensureAnonymousDevice();
@@ -225,6 +317,13 @@ export default function DisplayPage() {
 
   useEffect(() => {
     const id = window.setInterval(() => setTick((x) => x + 1), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setTvSymbol((s) => (s === "FOREXCOM:XAUUSD" ? "BINANCE:BTCUSDT" : "FOREXCOM:XAUUSD"));
+    }, TV_ROTATE_MS);
     return () => window.clearInterval(id);
   }, []);
 
@@ -312,7 +411,6 @@ export default function DisplayPage() {
     return Math.max(0, Math.ceil(rem / 1000));
   }, [lastSweepAt, tick]);
 
-  /** One ribbon per cluster — avoids repeating the same catalyst story on four cards. */
   const catalystGroups = useMemo((): CatalystGroup[] => {
     const rows = predictions.filter(isCatalystWatchRow);
     const by = new Map<string, PredRow[]>();
@@ -341,7 +439,6 @@ export default function DisplayPage() {
     return out.slice(0, 4);
   }, [predictions]);
 
-  /** Newest cluster only, if last fire within 15m — one “Active catalyst” strip in Breaking pulse. */
   const activeCatalystFresh = useMemo(() => {
     const g = catalystGroups[0];
     if (!g || !g._ts) return null;
@@ -349,23 +446,12 @@ export default function DisplayPage() {
     return g;
   }, [catalystGroups]);
 
-  /** Pulse strip: price-shock + fast gossip; fresh catalyst also gets a single highlight card below. */
   const pulseRows = useMemo(() => {
     return predictions
       .filter((r) => isPriceShockRow(r) || isFastPulseRow(r))
       .sort((a, b) => (Date.parse(String(b.time || "")) || 0) - (Date.parse(String(a.time || "")) || 0))
       .slice(0, isProBoardroom ? 4 : 5);
   }, [predictions, isProBoardroom]);
-
-  const newsHeadlines = useMemo(() => {
-    const cap = isProBoardroom ? 5 : 6;
-    if (!newsArticles.length || isPlaceholderNewsArticles(newsArticles)) return [];
-    return newsArticles
-      .slice(0, cap)
-      .map((a) => String(a.title || "").trim())
-      .filter(Boolean)
-      .map((t) => trimDisplayLine(t, isProBoardroom ? 100 : 120));
-  }, [newsArticles, isProBoardroom]);
 
   const p = prices && typeof prices === "object" ? prices : null;
   const spotDefs = [
@@ -375,212 +461,390 @@ export default function DisplayPage() {
     { key: "eth", label: "ETH", sub: "USD", raw: p?.eth, rawCh: p?.ethCh },
   ] as const;
 
+  const headlineFive = useMemo(() => {
+    if (!newsArticles.length || isPlaceholderNewsArticles(newsArticles)) return [];
+    return newsArticles
+      .slice(0, 5)
+      .map((a) => trimDisplayLine(String(a.title || "").trim(), 160))
+      .filter(Boolean);
+  }, [newsArticles]);
+
+  const [readL1, readL2] = useMemo(
+    () =>
+      buildMarketReadTwoLines({
+        intensity: gossip?.intensity ?? null,
+        topCluster: catalystGroups[0]?.cluster ?? null,
+        topTheme: catalystGroups[0]?.theme ?? null,
+      }),
+    [gossip?.intensity, catalystGroups],
+  );
+
+  /** Only NVDA/INTC have live % on /api/prices today; others stay "—" until wired on the server. */
+  const hotSectorRows = useMemo(() => {
+    const specs = [
+      ["NVDA", "nvda"],
+      ["INTC", "intc"],
+      ["TSM", null],
+      ["AVGO", null],
+      ["MU", null],
+      ["SMCI", null],
+      ["SOUN", null],
+    ] as const;
+    const liveKeys = new Set(["nvda", "intc"]);
+    const pr = p && typeof p === "object" ? (p as Record<string, unknown>) : null;
+    return specs.map(([sym, key]) => {
+      if (!key || !pr || !liveKeys.has(key)) return { sym, chRaw: null as unknown, hasLiveCh: false };
+      const chKey = `${key}Ch`;
+      if (!Object.prototype.hasOwnProperty.call(pr, chKey)) return { sym, chRaw: null as unknown, hasLiveCh: false };
+      const raw = pr[chKey];
+      if (raw === null || raw === undefined) return { sym, chRaw: null as unknown, hasLiveCh: false };
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return { sym, chRaw: null as unknown, hasLiveCh: false };
+      return { sym, chRaw: raw, hasLiveCh: true };
+    });
+  }, [p]);
+
   const statusColor =
     healthOk === true ? "bg-emerald-500" : healthOk === false ? "bg-amber-500" : "bg-slate-500";
 
-  return (
-    <div
-      className="relative min-h-0 h-[100dvh] w-full overflow-hidden text-slate-100 flex flex-col bg-[#070809]"
-    >
-      {/* Masks global VoiceAvatar (fixed top-20 left-4 z-50, w-10 h-10 rounded-full) — match size/shape to avoid edge halo */}
-      <div
-        className="fixed top-20 left-4 z-[100] h-10 w-10 rounded-full bg-[#070809] ring-1 ring-black/60 pointer-events-auto"
-        aria-hidden
-        title=""
-      />
+  const narrativeBlock = (
+    <div className="flex min-h-0 flex-col gap-3 overflow-y-auto overflow-x-hidden pr-1">
+      <div className="shrink-0 border-b border-white/[0.06] pb-3">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-400/90">The narrative engine</div>
+            <p className="mt-2 text-lg font-semibold leading-snug text-white md:text-xl">
+              Gossip intensity: {gossip ? `${gossip.intensity}/10` : "—"}{" "}
+              <span className="text-slate-500">({gossipBand(gossip?.intensity ?? null)})</span>
+            </p>
+            <p className="mt-1 text-base text-slate-300 md:text-lg">
+              Theme:{" "}
+              <span className="font-semibold text-amber-100/95">
+                {catalystGroups[0]?.theme ?? "No dominant theme on this sweep."}
+              </span>
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              Sweep {lastSweepLabel}
+              {nextSweepSec != null ? ` · Next in ${nextSweepSec}s` : ""}
+            </p>
+          </div>
+          <div className="shrink-0 rounded-md border border-white/[0.07] bg-white/[0.03] px-3 py-2 lg:max-w-[13rem] lg:text-right">
+            <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-600">Active assets</div>
+            <p className="mt-1 text-[11px] leading-snug text-slate-400">Gold · BTC · ETH · WTI</p>
+            <div className="mt-2 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-600">Signal mode</div>
+            <p className="mt-1 text-[11px] leading-snug text-slate-400">Catalyst Watch · Price context · Headlines</p>
+          </div>
+        </div>
+      </div>
 
-      {/* Burn-in: static very low-opacity wash only (no animated blobs that read as defects) */}
+      <div className="shrink-0">
+        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-200/85">Catalyst watch</div>
+        {catalystGroups.length === 0 ? (
+          <p className="mt-1 text-sm text-slate-500">Watching — none on this sweep.</p>
+        ) : (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {catalystGroups.map((g) => (
+              <div
+                key={g.cluster}
+                className="max-w-full rounded-md border border-amber-500/35 bg-amber-950/30 px-2.5 py-1.5 text-xs text-amber-50"
+              >
+                <span className="font-mono text-[10px] uppercase tracking-wider text-amber-400/90">{g.cluster}</span>
+                <span className="mx-1.5 text-slate-600">·</span>
+                <span className="font-semibold">{g.assets}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="min-h-0 shrink-0">
+        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Headlines</div>
+        {headlineFive.length === 0 ? (
+          <p className="mt-2 text-base text-slate-500">Watching — none right now.</p>
+        ) : (
+          <ol className="mt-2 list-none space-y-2.5 pl-0">
+            {headlineFive.map((t, i) => (
+              <li key={i} className="flex gap-3 text-lg font-medium leading-snug text-slate-100 md:text-xl">
+                <span className="w-8 shrink-0 text-right font-mono text-base font-bold text-cyan-500/90">{i + 1}.</span>
+                <span className="min-w-0 line-clamp-2">{t}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col border-t border-white/[0.06] pt-2">
+        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-300/90">Breaking pulse</div>
+        {activeCatalystFresh && (
+          <div className="mt-2 shrink-0 rounded-lg border border-amber-400/45 bg-amber-950/35 px-3 py-2.5">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-200">Status · Active catalyst</div>
+            <div className="mt-1 text-lg font-bold text-amber-50">{activeCatalystFresh.assets}</div>
+            <div className="text-sm text-slate-300">
+              {activeCatalystFresh.theme} · {activeCatalystFresh.rel}
+            </div>
+          </div>
+        )}
+        {pulseRows.length === 0 ? (
+          <p className="mt-2 text-base text-slate-500">Watching — no price-shock or fast-gossip rows.</p>
+        ) : (
+          <ul className="mt-2 min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden">
+            {pulseRows.map((r) => {
+              const status = isPriceShockRow(r) ? "Price shock" : "Headline heat";
+              return (
+                <li
+                  key={r.id || `${r.source}-${r.time}`}
+                  className="rounded-xl border border-orange-400/30 border-l-[6px] border-l-orange-500 bg-gradient-to-r from-orange-950/55 to-black/50 px-4 py-4 shadow-[0_0_28px_-12px_rgba(249,115,22,0.28)]"
+                >
+                  <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-200/95">Status · {status}</div>
+                  <div className="mt-2 text-2xl font-bold leading-tight text-orange-50 md:text-3xl">
+                    {String(r.asset || "—")} · {String(r.call || "—")}
+                  </div>
+                  <div className="mt-1 text-sm text-slate-400 md:text-base">
+                    {String(r.timeframe || r.horizon || "—")} · {formatRelativePulse(r.time)}
+                  </div>
+                  <p className="mt-2 text-base leading-snug text-slate-200 md:text-lg">{pulseWhyLine(r)}</p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+
+  const hotSectorsBlock = (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-cyan-500/35 bg-gradient-to-b from-cyan-950/40 via-[#0a1018] to-black/80 px-2 py-2 shadow-[0_0_36px_-12px_rgba(34,211,238,0.25),inset_0_1px_0_rgba(255,255,255,0.06)]">
+      <div className="shrink-0 text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.45)]">
+        Hot sectors
+      </div>
+      <div className="mt-0.5 shrink-0 text-[10px] font-bold uppercase tracking-[0.2em] text-violet-200/95 [text-shadow:0_0_14px_rgba(167,139,250,0.35)]">
+        AI / Semiconductors
+      </div>
+      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-2 gap-x-1.5 gap-y-1 auto-rows-min content-start text-center font-mono">
+        {hotSectorRows.map((row, i) => {
+          const last = i === hotSectorRows.length - 1;
+          const oddCount = hotSectorRows.length % 2 === 1;
+          const chStr = row.hasLiveCh ? fmtCh(row.chRaw) : null;
+          return (
+            <div
+              key={row.sym}
+              className={`flex min-h-0 flex-col items-center justify-center rounded-md border px-0.5 py-1 [text-shadow:0_0_10px_rgba(255,255,255,0.2)] ${
+                last && oddCount ? "col-span-2" : ""
+              } ${
+                i % 2 === 0
+                  ? "border-cyan-400/45 bg-gradient-to-br from-cyan-900/50 via-slate-900/95 to-slate-950 shadow-[0_0_14px_-6px_rgba(34,211,238,0.4),inset_0_1px_0_rgba(255,255,255,0.1)]"
+                  : "border-violet-400/40 bg-gradient-to-br from-violet-950/55 via-slate-900/95 to-slate-950 shadow-[0_0_14px_-6px_rgba(167,139,250,0.3),inset_0_1px_0_rgba(255,255,255,0.08)]"
+              }`}
+            >
+              <span className="text-[11px] font-black leading-none tracking-wide text-white md:text-xs">{row.sym}</span>
+              {chStr ? (
+                <span className={`mt-0.5 text-[9px] font-bold leading-none tabular-nums md:text-[10px] ${chgToneClass(row.chRaw)}`}>
+                  {chStr}
+                </span>
+              ) : (
+                <span className="mt-0.5 text-[9px] font-semibold leading-none tabular-nums text-slate-500 md:text-[10px]">—</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-auto shrink-0 pt-1 text-[8px] leading-tight text-slate-500">
+        24h % when ticker is on the price feed (NVDA, INTC). Others: context only.
+      </p>
+    </div>
+  );
+
+  const chartBlock = (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-700/50 bg-[#06080c] p-2 shadow-inner">
+      <div className="mb-2 flex shrink-0 flex-wrap items-end justify-between gap-2 px-1">
+        <div className="text-sm font-bold uppercase tracking-[0.12em] text-slate-100 md:text-base">
+          {tvSymbol.includes("XAU") ? "Gold / U.S. dollar" : "Bitcoin / USD"}
+        </div>
+        <div className="text-[10px] font-medium text-slate-500">Gold ↔ BTC · auto</div>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <TvEmbed key={tvSymbol} symbol={tvSymbol} height={400} interval="60" ambient />
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-0 flex h-[100dvh] max-h-[100dvh] w-screen max-w-[100vw] flex-col overflow-hidden bg-[#0B0E11] text-slate-100">
       <div
-        className="pointer-events-none fixed inset-0 z-0 opacity-[0.04]"
+        className="pointer-events-none absolute inset-0 z-[1]"
         style={{
-          background:
-            "radial-gradient(ellipse 100% 80% at 50% 0%, rgba(34,211,238,0.35), transparent 50%), radial-gradient(ellipse 80% 60% at 100% 100%, rgba(180,83,9,0.12), transparent 45%)",
+          background: `
+            radial-gradient(ellipse 90% 55% at 50% 0%, rgba(45,212,191,0.06), transparent 50%),
+            linear-gradient(rgba(148,163,184,0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(148,163,184,0.04) 1px, transparent 1px)
+          `,
+          backgroundSize: "100% 100%, 48px 48px, 48px 48px",
         }}
       />
 
-      {showWarningBanner && (
-        <div className="relative z-20 shrink-0 border-b border-amber-500/30 bg-amber-950/40 px-3 py-1.5 text-center text-sm text-amber-100">
-          Display Pro preview ends in {daysLeftPro} day{daysLeftPro === 1 ? "" : "s"}. Open{" "}
-          <span className="font-semibold text-cyan-300">sentotrade.io</span> to keep this layout.
-        </div>
-      )}
-
-      <header
-        className={`relative z-10 shrink-0 flex items-center justify-between border-b border-white/[0.08] bg-black/50 px-4 ${
-          isProBoardroom ? "py-2" : "py-2.5"
-        }`}
-      >
-        <div className="flex items-baseline gap-2 min-w-0">
+      <header className="relative z-10 grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-white/[0.07] bg-black/55 px-4 py-3 md:px-6">
+        <div className="min-w-0 justify-self-start">
           <span
-            className={`font-bold tracking-tight truncate ${
-              visualFree ? "text-xl text-cyan-300" : "text-lg text-slate-100"
-            }`}
+            className={`block truncate font-bold uppercase tracking-[0.12em] ${visualFree ? "text-base text-cyan-300 md:text-lg" : "text-sm text-slate-100 md:text-base"}`}
           >
             SentoTrade Display
           </span>
-          <span className="hidden md:inline text-slate-500 text-sm">{isProBoardroom ? "· Radar" : "· TV"}</span>
+          <span className="hidden text-[11px] uppercase tracking-widest text-slate-600 sm:block">
+            {isProBoardroom ? "Boardroom" : "Public"} · live sweep
+          </span>
         </div>
-        <div className="flex items-center gap-3 text-slate-200 tabular-nums text-base">
-          <time dateTime={clock.toISOString()}>
+        <div className="max-w-[min(52vw,36rem)] min-w-0 justify-self-center text-center">
+          <div className="text-[9px] font-bold uppercase tracking-[0.28em] text-cyan-500/80">Current market weather</div>
+          <p className="mt-1 line-clamp-2 text-sm font-semibold leading-snug text-slate-100 md:text-base">
+            {readL1} <span className="text-slate-600">·</span> {readL2}
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-3 justify-self-end tabular-nums">
+          <time className="text-lg font-semibold text-slate-100 md:text-xl" dateTime={clock.toISOString()}>
             {clock.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           </time>
-          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${statusColor}`} title={healthOk ? "Online" : "Degraded"} />
+          <span className={`h-3 w-3 shrink-0 rounded-full ${statusColor}`} title={healthOk ? "Online" : "Degraded"} />
         </div>
       </header>
 
-      {/* TV grid: left stacked spots · right command deck */}
-      <div className="relative z-10 flex-1 min-h-0 flex flex-col lg:flex-row gap-3 px-3 py-2 lg:px-4 lg:py-3">
-        {/* Left — four stacked large tiles */}
-        <section className="flex shrink-0 flex-col gap-2 lg:w-[min(26%,320px)] lg:min-w-[220px] lg:flex-initial lg:max-h-full">
-          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-amber-200/70">Spot · /api/prices</div>
-          <div className="grid min-h-0 flex-1 grid-rows-4 gap-2 lg:min-h-0">
-            {spotDefs.map((def) => {
-              const val = fmtUsd(def.raw);
-              const ch = fmtCh(def.rawCh);
-              return (
-                <BigSpotTile
-                  key={def.key}
-                  label={def.label}
-                  sub={def.sub}
-                  value={val}
-                  changeStr={ch}
-                  changeRaw={def.rawCh}
-                  compact={isProBoardroom}
-                />
-              );
-            })}
+      {/* Mobile / narrow: stacked */}
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden px-3 py-3 lg:hidden">
+        <section className="shrink-0 space-y-2">
+          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-200/80">Spot · /api/prices</div>
+          <div className="grid grid-cols-2 gap-2">
+            {spotDefs.map((def) => (
+              <BigSpotTile
+                key={def.key}
+                gid={def.key}
+                label={def.label}
+                sub={def.sub}
+                value={fmtUsd(def.raw)}
+                changeStr={fmtCh(def.rawCh)}
+                changeRaw={def.rawCh}
+                priceNum={Number(def.raw)}
+                chNum={Number(def.rawCh)}
+                compact
+              />
+            ))}
           </div>
         </section>
-
-        {/* Command panel — gossip hero + catalyst + headlines + pulse (no duplicate catalyst-watch labels) */}
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-cyan-500/15 bg-black/40 px-4 py-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]">
-          <div className="mb-3 flex shrink-0 items-end justify-between gap-3 border-b border-white/[0.06] pb-2">
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-cyan-300/80">Gossip intensity</div>
-              <div className="mt-1 flex items-baseline gap-1.5">
-                <span className="text-5xl font-black tabular-nums leading-none tracking-tight text-white lg:text-6xl">
-                  {gossip ? gossip.intensity : "—"}
-                </span>
-                <span className="text-3xl font-bold tabular-nums leading-none text-slate-500 lg:text-4xl">/</span>
-                <span className="text-3xl font-bold tabular-nums leading-none text-slate-500 lg:text-4xl">10</span>
-              </div>
-            </div>
-            <div className="text-right text-xs leading-tight text-slate-500">
-              <div>Sweep {lastSweepLabel}</div>
-              {nextSweepSec != null && <div className="text-cyan-600/80">Next {nextSweepSec}s</div>}
-            </div>
-          </div>
-
-          {gossip && gossip.spywords.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-2">
-              {gossip.spywords.slice(0, 10).map((w, i) => (
-                <span
-                  key={i}
-                  className="rounded-md border border-amber-500/25 bg-amber-950/30 px-3 py-1 text-sm font-semibold uppercase tracking-wide text-amber-100"
-                >
-                  {w}
-                </span>
-              ))}
-            </div>
-          )}
-
-          <div className="mb-2 shrink-0">
-            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-amber-200/80">Catalyst watch</div>
-            {catalystGroups.length === 0 ? (
-              <p className="mt-1 text-base text-slate-500">Watching — no catalyst cluster on the wire.</p>
-            ) : (
-              <ul className="mt-2 space-y-2">
-                {catalystGroups.map((g) => (
-                  <li
-                    key={g.cluster}
-                    className="rounded-lg border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-lg leading-snug text-amber-50"
-                  >
-                    <span className="font-bold text-amber-200">{g.assets}</span>
-                    <span className="text-amber-100/70"> — </span>
-                    <span className="text-slate-200">{g.theme}</span>
-                    <span className="text-slate-500"> · {g.window} · {g.rel}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div className="min-h-0 max-h-[32vh] shrink-0 overflow-y-auto overflow-x-hidden border-t border-white/[0.06] py-2 lg:max-h-none lg:overflow-hidden">
-            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500">Headlines</div>
-            {newsHeadlines.length === 0 ? (
-              <p className="mt-1 text-base text-slate-500">Watching — none right now.</p>
-            ) : (
-              <ul className="mt-2 space-y-2">
-                {newsHeadlines.map((t, i) => (
-                  <li key={i} className="text-lg leading-snug text-slate-100 line-clamp-2">
-                    <span className="text-cyan-500/80">▸</span> {t}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div className="mt-auto flex min-h-0 flex-1 flex-col overflow-hidden border-t border-white/[0.06] pt-2">
-            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-orange-300/80">Breaking pulse</div>
-            {activeCatalystFresh && (
-              <div className="mt-2 shrink-0 rounded-lg border border-amber-400/35 bg-amber-950/30 px-3 py-2">
-                <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">Active catalyst</div>
-                <div className="mt-0.5 text-lg font-bold leading-tight text-amber-50">{activeCatalystFresh.assets}</div>
-                <div className="text-sm text-slate-300">
-                  {activeCatalystFresh.theme} · {activeCatalystFresh.window} · {activeCatalystFresh.rel}
-                </div>
-              </div>
-            )}
-            {pulseRows.length === 0 ? (
-              <p className="mt-2 text-base text-slate-500">Watching — no price-shock or fast-gossip rows.</p>
-            ) : (
-              <ul className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden lg:overflow-hidden">
-                {pulseRows.map((r) => (
-                  <li
-                    key={r.id || `${r.source}-${r.time}`}
-                    className="rounded-lg border border-orange-500/20 bg-orange-950/15 px-3 py-2"
-                  >
-                    <div className="text-lg font-bold leading-tight text-orange-100">
-                      {isPriceShockRow(r) ? "Price shock" : "Headline heat"}{" "}
-                      <span className="text-slate-300">·</span> {String(r.asset || "—")}{" "}
-                      <span className="text-slate-400">·</span> {String(r.call || "—")}
-                    </div>
-                    <div className="mt-0.5 text-sm text-slate-500">
-                      {String(r.timeframe || r.horizon || "—")} · {formatRelativePulse(r.time)}
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-base text-slate-300">{shortReason(r, 140)}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </section>
+        {narrativeBlock}
+        {hotSectorsBlock}
+        <div className="min-h-[280px] shrink-0">{chartBlock}</div>
       </div>
 
-      {/* Full-width ticker */}
-      <div className="relative z-10 shrink-0 border-t border-cyan-500/20 bg-black/60 py-3 text-center">
-        <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500">AI / Semiconductors</div>
-        <div className="mt-1 text-2xl font-bold tracking-[0.14em] text-cyan-200 md:text-3xl">
-          NVDA · INTC · TSM · AVGO · MU · SMCI · SOUN
+      {/* Desktop: 3-column + chart row */}
+      <div
+        className="relative z-10 hidden min-h-0 flex-1 gap-4 overflow-hidden px-4 pb-3 pt-3 md:px-5 lg:grid"
+        style={{
+          gridTemplateAreas: `"spots narrative hot" "spots chart chart"`,
+          gridTemplateColumns: "minmax(260px, 1.05fr) minmax(0, 1.85fr) minmax(200px, 0.82fr)",
+          gridTemplateRows: "minmax(0, 1fr) minmax(300px, 46vh)",
+        }}
+      >
+        <section
+          className="flex min-h-0 flex-col gap-2 overflow-hidden rounded-xl border border-white/[0.08] bg-black/35 p-3"
+          style={{ gridArea: "spots" }}
+        >
+          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-200/85">Spot · prices</div>
+          <div className="flex min-h-0 flex-1 flex-col justify-between gap-2">
+            {spotDefs.map((def) => (
+              <BigSpotTile
+                key={def.key}
+                gid={def.key}
+                label={def.label}
+                sub={def.sub}
+                value={fmtUsd(def.raw)}
+                changeStr={fmtCh(def.rawCh)}
+                changeRaw={def.rawCh}
+                priceNum={Number(def.raw)}
+                chNum={Number(def.rawCh)}
+                compact={false}
+              />
+            ))}
+          </div>
+        </section>
+
+        <div
+          className="min-h-0 overflow-hidden rounded-xl border border-cyan-500/20 bg-black/45 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
+          style={{ gridArea: "narrative" }}
+        >
+          {narrativeBlock}
+        </div>
+
+        <div className="flex min-h-0 flex-col overflow-hidden" style={{ gridArea: "hot" }}>
+          {hotSectorsBlock}
+        </div>
+
+        <div className="min-h-0 overflow-hidden" style={{ gridArea: "chart" }}>
+          {chartBlock}
         </div>
       </div>
 
-      <footer className="relative z-10 shrink-0 border-t border-white/[0.06] bg-black/60 px-3 py-2">
-        {visualFree ? (
-          <p className="text-center text-sm text-slate-100 md:text-base">
-            Free Display Active · Powered by SentoTrade · Open full radar at{" "}
-            <span className="font-semibold text-cyan-300">sentotrade.io</span>
-          </p>
-        ) : (
-          <div>
-            <p className="text-center text-sm text-slate-400">Display Pro preview · Powered by SentoTrade</p>
-            {tierParam === "pro" && typeof window !== "undefined" && localStorage.getItem(LS_PRO_ACTIVE) !== "true" && (
-              <p className="text-center text-[10px] text-slate-600">URL preview — not billing</p>
-            )}
+      {showUpgradeStrip && (
+        <div className="relative z-10 shrink-0 border-t border-amber-500/25 bg-gradient-to-r from-amber-950/50 via-black/80 to-amber-950/40 px-4 py-3 md:px-6">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
+            <div className="min-w-0 flex-1 text-sm leading-snug text-amber-50 md:text-base">
+              {showWarningBanner && (
+                <p className="font-semibold text-amber-100">
+                  Display Pro preview ends in {daysLeftPro} day{daysLeftPro === 1 ? "" : "s"}. Open{" "}
+                  <span className="text-cyan-300">sentotrade.io</span> to keep this layout.
+                </p>
+              )}
+              {visualFree && (
+                <p className={showWarningBanner ? "mt-1 text-amber-100/90" : "font-medium text-amber-100/95"}>
+                  Free display tier · Open the full radar, Live Edge Tests, and Trader Desk at{" "}
+                  <span className="font-semibold text-cyan-300">sentotrade.io</span>
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-col items-center gap-1 rounded-xl border border-amber-500/35 bg-black/50 px-4 py-3 text-center shadow-lg">
+              <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-500">Scan for full radar</div>
+              <div
+                className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-600 bg-slate-900/90 text-[10px] font-bold text-slate-500"
+                aria-hidden
+              >
+                QR
+              </div>
+            </div>
           </div>
-        )}
-        <p className="mt-1 text-center text-[10px] text-slate-600 leading-snug md:text-[11px]">
-          Market awareness only. Not financial advice. Not a broker. Data refreshes periodically ({Math.round(SWEEP_MS / 60000)}m sweep).
+        </div>
+      )}
+
+      <div className="relative z-10 shrink-0 border-t border-cyan-500/20 bg-black/90 px-3 py-2.5">
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-lg font-bold tabular-nums md:text-xl">
+          {fmtCh(p?.goldCh) && (
+            <span className="whitespace-nowrap">
+              <span className="text-slate-400">Gold</span> <span className={chgToneClass(p?.goldCh)}>{fmtCh(p?.goldCh)}</span>
+            </span>
+          )}
+          {fmtCh(p?.oilCh) && (
+            <span className="whitespace-nowrap">
+              <span className="text-slate-400">WTI</span> <span className={chgToneClass(p?.oilCh)}>{fmtCh(p?.oilCh)}</span>
+            </span>
+          )}
+          {fmtCh(p?.btcCh) && (
+            <span className="whitespace-nowrap">
+              <span className="text-slate-400">BTC</span> <span className={chgToneClass(p?.btcCh)}>{fmtCh(p?.btcCh)}</span>
+            </span>
+          )}
+          {fmtCh(p?.ethCh) && (
+            <span className="whitespace-nowrap">
+              <span className="text-slate-400">ETH</span> <span className={chgToneClass(p?.ethCh)}>{fmtCh(p?.ethCh)}</span>
+            </span>
+          )}
+          {!fmtCh(p?.goldCh) && !fmtCh(p?.oilCh) && !fmtCh(p?.btcCh) && !fmtCh(p?.ethCh) && (
+            <span className="text-slate-500">Waiting for /api/prices…</span>
+          )}
+        </div>
+      </div>
+
+      <footer className="relative z-10 shrink-0 border-t border-white/[0.05] bg-black/70 px-3 py-1.5">
+        <p className="text-center text-[10px] leading-tight text-slate-600 md:text-[11px]">
+          Market awareness only · Not financial advice · Not a broker · {Math.round(SWEEP_MS / 60000)}m sweep
+          {!visualFree && tierParam === "pro" && typeof window !== "undefined" && localStorage.getItem(LS_PRO_ACTIVE) !== "true" && (
+            <span className="text-slate-600"> · URL preview — not billing</span>
+          )}
         </p>
       </footer>
     </div>
@@ -588,38 +852,59 @@ export default function DisplayPage() {
 }
 
 function BigSpotTile({
+  gid,
   label,
   sub,
   value,
   changeStr,
   changeRaw,
+  priceNum,
+  chNum,
   compact,
 }: {
+  gid: string;
   label: string;
   sub: string;
   value: string | null;
   changeStr: string | null;
   changeRaw: unknown;
+  priceNum: number;
+  chNum: number;
   compact?: boolean;
 }) {
+  const showSpark = Number.isFinite(priceNum) && Number.isFinite(chNum);
   return (
-    <div className="flex min-h-0 flex-1 flex-col justify-center rounded-xl border border-white/[0.1] bg-gradient-to-b from-white/[0.07] to-black/40 px-3 py-2">
-      <div className={`font-bold uppercase tracking-[0.15em] text-amber-200/90 ${compact ? "text-xs" : "text-sm"}`}>{label}</div>
-      <div className="text-[11px] text-slate-500">{sub}</div>
-      {value ? (
-        <>
-          <div className={`mt-1 font-black tabular-nums leading-none text-white ${compact ? "text-3xl" : "text-3xl lg:text-4xl"}`}>
-            {value}
-          </div>
-          {changeStr ? (
-            <div className={`mt-1 tabular-nums ${compact ? "text-sm" : "text-base"} ${chgToneClass(changeRaw)}`}>
-              {changeStr} <span className="text-slate-500 font-normal">24h</span>
+    <div className="flex min-h-0 flex-1 flex-row items-stretch justify-between gap-2 overflow-hidden rounded-xl border border-white/[0.1] bg-gradient-to-b from-white/[0.06] to-black/55 px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]">
+      <div className="flex min-w-0 flex-1 flex-col justify-center">
+        <div className={`font-bold uppercase tracking-[0.14em] text-amber-200/90 ${compact ? "text-[10px]" : "text-xs"}`}>{label}</div>
+        <div className="text-[10px] text-slate-500">{sub}</div>
+        {value ? (
+          <>
+            <div
+              className={`mt-1 font-black tabular-nums leading-none tracking-tight text-white ${compact ? "text-2xl" : "text-3xl lg:text-4xl"}`}
+            >
+              {value}
             </div>
-          ) : null}
-        </>
-      ) : (
-        <div className="mt-2 text-lg text-slate-500">Watching</div>
-      )}
+            {changeStr ? (
+              <div className={`mt-1 tabular-nums ${compact ? "text-sm" : "text-base lg:text-lg"} ${chgToneClass(changeRaw)}`}>
+                {changeStr} <span className="font-normal text-slate-500">24h</span>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="mt-1 text-sm text-slate-500">Watching</div>
+        )}
+        <div className="mt-auto pt-2">
+          <div className="h-1 w-full overflow-hidden rounded-full bg-slate-900/90 ring-1 ring-white/5">
+            <div className={`h-full w-full rounded-full ${chgBarClass(changeRaw)} opacity-90`} />
+          </div>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-col items-end justify-center self-center">
+        {showSpark ? <MiniAreaTrendSvg gid={gid} price={priceNum} chPct={chNum} /> : (
+          <div className="h-10 w-[118px] shrink-0 rounded bg-slate-900/60" />
+        )}
+      </div>
     </div>
   );
 }
