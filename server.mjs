@@ -683,6 +683,209 @@ async function fetchNewsWithCache() {
   return articles;
 }
 
+/* ─── Social Pulse (26c-A): Reddit RSS only — not mixed into /api/news; JSON-only; no predictions / Telegram / stats / scoring ─── */
+const SOCIAL_PULSE_CACHE_MS = 12 * 60 * 1000; /* 10–15m band */
+const SOCIAL_PULSE_RSS_FEEDS = [
+  { subreddit: "cryptocurrency", url: "https://www.reddit.com/r/cryptocurrency/hot/.rss" },
+  { subreddit: "stocks", url: "https://www.reddit.com/r/stocks/hot/.rss" },
+  { subreddit: "investing", url: "https://www.reddit.com/r/investing/hot/.rss" },
+  { subreddit: "forex", url: "https://www.reddit.com/r/forex/hot/.rss" },
+];
+const SOCIAL_PULSE_UA =
+  "Mozilla/5.0 (compatible; SentotradeSocialPulse/1.0; +https://sentotrade.io)";
+let socialPulseCache = {
+  ts: 0,
+  fetchedOk: false,
+  lastError: null,
+  posts: [],
+  themeCounts: {},
+};
+
+function normalizeSocialPulseTitle(t) {
+  return String(t || "")
+    .toLowerCase()
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
+
+function decodeSocialPulseXmlText(s) {
+  if (!s) return "";
+  return String(s)
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/<[^>]+>/g, "")
+    .trim();
+}
+
+function parseRedditRssItems(xml) {
+  const items = [];
+  if (!xml || typeof xml !== "string") return items;
+  const re = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
+  let m;
+  while ((m = re.exec(xml))) {
+    const block = m[1];
+    const titleRaw = block.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "";
+    const linkRaw =
+      block.match(/<link[^>]*>([\s\S]*?)<\/link>/i)?.[1] ||
+      block.match(/<guid[^>]*>([\s\S]*?)<\/guid>/i)?.[1] ||
+      "";
+    const title = decodeSocialPulseXmlText(titleRaw);
+    const url = decodeSocialPulseXmlText(linkRaw);
+    if (title && url) items.push({ title, url });
+  }
+  return items;
+}
+
+/** Word-boundary token / phrase tags (same helpers as news headline matching). */
+function detectSocialPulseThemes(titleNorm) {
+  const themes = [];
+  const packs = [
+    {
+      id: "musk_intel_social",
+      phrases: ["elon musk", "neuralink"],
+      tokens: ["musk", "tesla", "tsla", "spacex", "xai", "grok"],
+    },
+    {
+      id: "ai_chip_social",
+      phrases: ["open ai", "machine learning", "supply chain"],
+      tokens: ["nvidia", "nvda", "amd", "intel", "semiconductor", "inference", "h100", "b200", "chip", "chips", "smci"],
+    },
+    {
+      id: "china_trade_social",
+      phrases: ["rare earth", "trade war", "export control", "export controls", "us china", "u s china", "xi jinping"],
+      tokens: ["tariff", "tariffs", "beijing", "taiwan", "tsmc", "yuan", "sanctions", "china"],
+    },
+    {
+      id: "energy_incident_social",
+      phrases: ["middle east", "supply disruption", "oil price", "oil prices"],
+      tokens: ["opec", "wti", "brent", "refinery", "pipeline", "outage", "reactor", "nuclear", "crude"],
+    },
+    {
+      id: "crypto_social",
+      phrases: ["spot etf", "bitcoin etf", "ethereum etf", "on chain"],
+      tokens: ["bitcoin", "btc", "ethereum", "eth", "solana", "sol", "crypto", "altcoin", "stablecoin", "defi"],
+    },
+  ];
+  for (const p of packs) {
+    let hit = false;
+    for (const ph of p.phrases) {
+      if (headlineHasPhrase(titleNorm, ph)) hit = true;
+    }
+    for (const t of p.tokens) {
+      if (headlineHasToken(titleNorm, t)) hit = true;
+    }
+    if (hit) themes.push(p.id);
+  }
+  return themes;
+}
+
+async function fetchSocialPulseRssText(url) {
+  const r = await fetch(url, {
+    headers: {
+      "User-Agent": SOCIAL_PULSE_UA,
+      Accept: "application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.8",
+    },
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!r.ok) throw new Error(`rss_http_${r.status}`);
+  return r.text();
+}
+
+async function refreshSocialPulseCache() {
+  const prevPosts = socialPulseCache.posts?.length ? socialPulseCache.posts.slice() : [];
+  const prevThemeCounts = { ...(socialPulseCache.themeCounts || {}) };
+  const all = [];
+  let lastErr = null;
+
+  await Promise.all(
+    SOCIAL_PULSE_RSS_FEEDS.map(async (feed) => {
+      try {
+        const xml = await fetchSocialPulseRssText(feed.url);
+        const parsed = parseRedditRssItems(xml);
+        for (const row of parsed.slice(0, 15)) {
+          all.push({ subreddit: feed.subreddit, title: row.title, url: row.url });
+        }
+      } catch (e) {
+        lastErr = e?.message || String(e);
+        console.log("[SocialPulse] RSS fail", feed.subreddit, lastErr);
+      }
+    })
+  );
+
+  const seen = new Set();
+  const posts = [];
+  const themeCounts = {};
+  for (const row of all) {
+    const tn = normalizeSocialPulseTitle(row.title);
+    if (!tn || seen.has(tn)) continue;
+    seen.add(tn);
+    const themes = detectSocialPulseThemes(tn);
+    for (const th of themes) themeCounts[th] = (themeCounts[th] || 0) + 1;
+    posts.push({ subreddit: row.subreddit, title: row.title, url: row.url, themes });
+    if (posts.length >= 48) break;
+  }
+
+  const now = Date.now();
+  if (posts.length > 0) {
+    socialPulseCache = { ts: now, fetchedOk: true, lastError: null, posts, themeCounts };
+  } else if (prevPosts.length) {
+    socialPulseCache = {
+      ts: now,
+      fetchedOk: false,
+      lastError: lastErr || "empty_parse",
+      posts: prevPosts,
+      themeCounts: prevThemeCounts,
+    };
+    console.log("[SocialPulse] Upstream empty/failed — keeping previous posts");
+  } else {
+    socialPulseCache = { ts: now, fetchedOk: false, lastError: lastErr || "empty", posts: [], themeCounts: {} };
+  }
+}
+
+function buildSocialPulseJsonPayload() {
+  const now = Date.now();
+  const ageMs = socialPulseCache.ts ? now - socialPulseCache.ts : null;
+  const cacheFresh = socialPulseCache.ts && ageMs !== null && ageMs < SOCIAL_PULSE_CACHE_MS;
+  return {
+    label: "Retail Chatter — unverified social discussion",
+    awareness:
+      "Retail chatter from public Reddit hot threads — unverified social discussion. Awareness only. Not confirmed news. Not a trade signal. Not scored as Live Edge.",
+    layer: "social-pulse",
+    cacheMs: SOCIAL_PULSE_CACHE_MS,
+    fetchedAt: socialPulseCache.ts ? new Date(socialPulseCache.ts).toISOString() : null,
+    cacheAgeMs: ageMs,
+    cacheFresh,
+    lastFetchError: socialPulseCache.lastError || null,
+    feeds: SOCIAL_PULSE_RSS_FEEDS.map((f) => ({ subreddit: f.subreddit, url: f.url })),
+    themeCounts: socialPulseCache.themeCounts || {},
+    posts: socialPulseCache.posts || [],
+  };
+}
+
+async function handleSocialPulseRequest(res) {
+  const now = Date.now();
+  const needFetch = !socialPulseCache.ts || now - socialPulseCache.ts >= SOCIAL_PULSE_CACHE_MS;
+  if (needFetch) {
+    try {
+      await refreshSocialPulseCache();
+    } catch (e) {
+      console.log("[SocialPulse] refresh error:", e?.message || e);
+    }
+  } else {
+    console.log("[SocialPulse] Serving cache, age:", Math.round((now - socialPulseCache.ts) / 1000), "s");
+  }
+  const payload = buildSocialPulseJsonPayload();
+  res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(payload));
+}
+
 const GOSSIP_KEYWORDS = [
   "gold",
   "oil",
@@ -2160,6 +2363,30 @@ function handleRequest(req, res) {
       .catch(() =>
         res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ intensity: 0, spywords: [], alerts: [], headlines: [] }))
       );
+    return;
+  }
+
+  if (pathOnly === "/api/social-pulse") {
+    handleSocialPulseRequest(res).catch((e) => {
+      console.log("[SocialPulse] handler error:", e?.message || e);
+      try {
+        const payload = buildSocialPulseJsonPayload();
+        res.writeHead(200, { "Content-Type": "application/json" }).end(
+          JSON.stringify({ ...payload, handlerError: String(e?.message || e) })
+        );
+      } catch {
+        res.writeHead(200, { "Content-Type": "application/json" }).end(
+          JSON.stringify({
+            label: "Retail Chatter — unverified social discussion",
+            awareness:
+              "Retail chatter — unverified social discussion. Awareness only. Not confirmed news. Not a trade signal.",
+            layer: "social-pulse",
+            posts: [],
+            handlerError: String(e?.message || e),
+          })
+        );
+      }
+    });
     return;
   }
 
