@@ -919,6 +919,25 @@ export default function DisplayPage() {
             <span className="text-slate-600"> · URL preview — not billing</span>
           )}
         </p>
+        <p className="mt-1 text-center text-[10px] leading-tight text-slate-500 md:text-[11px]">
+          <a
+            href="https://sentotrade.io"
+            className="text-cyan-500/90 underline-offset-2 hover:text-cyan-300 hover:underline"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            sentotrade.io
+          </a>
+          <span className="text-slate-600"> · </span>
+          <a
+            href="https://sentotrade.io/#/display?tier=pro"
+            className="text-slate-400 underline-offset-2 hover:text-slate-200 hover:underline"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View live display
+          </a>
+        </p>
       </footer>
     </div>
   );
