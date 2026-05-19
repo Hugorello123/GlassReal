@@ -1751,10 +1751,19 @@ const GURU_QUOTA_FILE = path.join(__dirname, "guru_quota.jsonl");
 async function fetchPrices() {
   try {
     const yahooMap = [
-      { key: "tsla", ticker: "TSLA" }, { key: "intc", ticker: "INTC" },
-      { key: "aapl", ticker: "AAPL" }, { key: "nvda", ticker: "NVDA" },
-      { key: "spx", ticker: "^GSPC" }, { key: "oil", ticker: "CL=F" },
-      { key: "gold", ticker: "GC=F" }, { key: "silver", ticker: "SI=F" }
+      // Hot sectors (display wall) — trim list if Yahoo rate-limits
+      { key: "nvda", ticker: "NVDA" },
+      { key: "intc", ticker: "INTC" },
+      { key: "tsm", ticker: "TSM" },
+      { key: "avgo", ticker: "AVGO" },
+      { key: "mu", ticker: "MU" },
+      { key: "smci", ticker: "SMCI" },
+      { key: "tsla", ticker: "TSLA" },
+      { key: "aapl", ticker: "AAPL" },
+      { key: "spx", ticker: "^GSPC" },
+      { key: "oil", ticker: "CL=F" },
+      { key: "gold", ticker: "GC=F" },
+      { key: "silver", ticker: "SI=F" },
     ];
     // CoinGecko (free, may rate-limit server IPs) with Binance fallback
     const cg = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true", { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => ({}));

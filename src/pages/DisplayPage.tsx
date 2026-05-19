@@ -519,20 +519,18 @@ export default function DisplayPage() {
     return segments.join(" · ");
   }, [catalystGroups]);
 
-  /** Only NVDA/INTC have live % on /api/prices today; others stay "—" until wired on the server. */
   const hotSectorRows = useMemo(() => {
     const specs = [
       ["NVDA", "nvda"],
       ["INTC", "intc"],
-      ["TSM", null],
-      ["AVGO", null],
-      ["MU", null],
-      ["SMCI", null],
+      ["TSM", "tsm"],
+      ["AVGO", "avgo"],
+      ["MU", "mu"],
+      ["SMCI", "smci"],
     ] as const;
-    const liveKeys = new Set(["nvda", "intc"]);
     const pr = p && typeof p === "object" ? (p as Record<string, unknown>) : null;
     return specs.map(([sym, key]) => {
-      if (!key || !pr || !liveKeys.has(key)) return { sym, chRaw: null as unknown, hasLiveCh: false };
+      if (!key || !pr) return { sym, chRaw: null as unknown, hasLiveCh: false };
       const chKey = `${key}Ch`;
       if (!Object.prototype.hasOwnProperty.call(pr, chKey)) return { sym, chRaw: null as unknown, hasLiveCh: false };
       const raw = pr[chKey];
@@ -549,7 +547,7 @@ export default function DisplayPage() {
   const hotSectorsBlock = (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-cyan-500/35 bg-gradient-to-b from-cyan-950/40 via-[#0a1018] to-black/80 px-1.5 py-1.5 shadow-[0_0_36px_-12px_rgba(34,211,238,0.25),inset_0_1px_0_rgba(255,255,255,0.06)]">
       <span className="sr-only">
-        Twenty-four hour percent from the sweep when the ticker is on the price feed: NVDA and INTC only. Other symbols are labels until wired.
+        Twenty-four hour percent from the sweep when the ticker is on the price feed: NVDA, INTC, TSM, AVGO, MU, SMCI.
       </span>
       <div className="shrink-0 text-[9px] font-bold uppercase tracking-[0.22em] text-cyan-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.45)]">
         Hot sectors
