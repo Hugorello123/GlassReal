@@ -494,6 +494,49 @@ const NEWS_GADGET_NEEDLES = [
   "models qualify",
 ];
 
+/** Listicle / content-farm / promo headlines — not wire-grade market news. */
+const NEWS_REJECT_LISTICLE_NEEDLES = [
+  "stocks to watch",
+  "stock to watch",
+  "stocks worth watching",
+  "worth watching",
+  "stocks to consider",
+  "stock to consider",
+  "best value stocks",
+  "best stocks to buy",
+  "best stock to buy",
+  "penny stocks",
+  "penny stock",
+  "long term investment",
+  "long-term investment",
+  "keep an eye on",
+  "should you get",
+  "credit card",
+  "card rewards",
+  "cash back",
+  "cashback",
+  "points and miles",
+  "showdown",
+  "top picks",
+  "top stocks",
+  "stocks to buy",
+  "stocks to own",
+  "dividend stocks to",
+  "growth stocks to",
+  "streaming stocks",
+  "fitness stocks",
+  "construction stocks",
+];
+
+const NEWS_REJECT_DOMAINS = new Set([
+  "thepointsguy.com",
+  "dailypolitical.com",
+  "tickerreport.com",
+  "thelincolnianonline.com",
+  "zolmax.com",
+  "insidermonkey.com",
+]);
+
 const NEWS_MARKET_IMPACT_NEEDLES = [
   "stock",
   "stocks",
@@ -561,6 +604,22 @@ function isHardRejectedNewsHeadline(title) {
   return false;
 }
 
+function isRejectedListicleOrContentFarmHeadline(title) {
+  const hay = normalizeHeadlineKey(title);
+  if (!hay) return true;
+  for (const n of NEWS_REJECT_LISTICLE_NEEDLES) {
+    if (hay.includes(n)) return true;
+  }
+  if (/\bto watch\b/.test(hay) && hay.includes("stock")) return true;
+  if (/\bto consider\b/.test(hay) && hay.includes("stock")) return true;
+  return false;
+}
+
+function isRejectedNewsDomain(url) {
+  const dom = newsArticleDomain(url);
+  return NEWS_REJECT_DOMAINS.has(dom);
+}
+
 function isConsumerGadgetWithoutMarketImpact(title) {
   const hay = normalizeHeadlineKey(title);
   let gadgetHit = false;
@@ -581,15 +640,17 @@ function isConsumerGadgetWithoutMarketImpact(title) {
 }
 
 /** Lightweight quality gate for /api/news market headlines. */
-function passesNewsHeadlineQuality(title) {
+function passesNewsHeadlineQuality(title, url) {
+  if (isRejectedNewsDomain(url)) return false;
   if (isHardRejectedNewsHeadline(title)) return false;
+  if (isRejectedListicleOrContentFarmHeadline(title)) return false;
   if (isConsumerGadgetWithoutMarketImpact(title)) return false;
   return hasMarketImpactSignal(title) || isMarketRelevantHeadline(title);
 }
 
-function scoreNewsHeadlineQuality(title) {
+function scoreNewsHeadlineQuality(title, url) {
   let score = 0;
-  if (!passesNewsHeadlineQuality(title)) return -99;
+  if (!passesNewsHeadlineQuality(title, url)) return -99;
   if (hasMarketImpactSignal(title)) score += 4;
   if (isMarketRelevantHeadline(title)) score += 1;
   const hay = normalizeHeadlineKey(title);
@@ -604,8 +665,8 @@ function scoreNewsHeadlineQuality(title) {
 
 function filterPoolByNewsQuality(pool) {
   return pool
-    .filter((a) => a?.title && passesNewsHeadlineQuality(a.title))
-    .sort((a, b) => scoreNewsHeadlineQuality(b.title) - scoreNewsHeadlineQuality(a.title));
+    .filter((a) => a?.title && passesNewsHeadlineQuality(a.title, a.url))
+    .sort((a, b) => scoreNewsHeadlineQuality(b.title, b.url) - scoreNewsHeadlineQuality(a.title, a.url));
 }
 
 function dedupeArticlesByTitle(rows) {
@@ -708,7 +769,7 @@ function buildDiverseMarketNewsArticles(mergedRows) {
   const qualityMerged = filterPoolByNewsQuality(mergedRows);
   const strict = qualityMerged.filter((a) => isMarketRelevantHeadline(a.title));
   let diverse = pickDiverseMarketHeadlines(strict, { max: NEWS_DIVERSITY_MAX });
-  diverse = diverse.filter((a) => passesNewsHeadlineQuality(a.title));
+  diverse = diverse.filter((a) => passesNewsHeadlineQuality(a.title, a.url));
   const usedKeys = new Set(diverse.map((a) => normalizeHeadlineKey(a.title)));
 
   if (diverse.length < NEWS_DIVERSITY_MIN) {
@@ -716,7 +777,7 @@ function buildDiverseMarketNewsArticles(mergedRows) {
       const k = normalizeHeadlineKey(a.title);
       if (!k || usedKeys.has(k)) return false;
       if (isNearDuplicateHeadline(a.title, diverse.map((x) => x.title))) return false;
-      if (!passesNewsHeadlineQuality(a.title)) return false;
+      if (!passesNewsHeadlineQuality(a.title, a.url)) return false;
       return isLooseMarketHeadline(a.title) || isMarketRelevantHeadline(a.title);
     });
     const extra = pickDiverseMarketHeadlines(fallbackPool, {
@@ -725,7 +786,7 @@ function buildDiverseMarketNewsArticles(mergedRows) {
       maxPerDomain: NEWS_MAX_PER_DOMAIN,
       alreadyPicked: diverse,
     });
-    diverse = diverse.concat(extra.filter((a) => passesNewsHeadlineQuality(a.title)));
+    diverse = diverse.concat(extra.filter((a) => passesNewsHeadlineQuality(a.title, a.url)));
     for (const a of diverse) usedKeys.add(normalizeHeadlineKey(a.title));
   }
 
@@ -734,7 +795,7 @@ function buildDiverseMarketNewsArticles(mergedRows) {
       const k = normalizeHeadlineKey(a.title);
       if (!k || usedKeys.has(k)) return false;
       if (isNearDuplicateHeadline(a.title, diverse.map((x) => x.title))) return false;
-      return passesNewsHeadlineQuality(a.title);
+      return passesNewsHeadlineQuality(a.title, a.url);
     });
     for (const a of anyLeft) {
       if (diverse.length >= NEWS_DIVERSITY_MIN) break;
@@ -745,7 +806,7 @@ function buildDiverseMarketNewsArticles(mergedRows) {
     }
   }
 
-  diverse = diverse.filter((a) => passesNewsHeadlineQuality(a.title)).slice(0, NEWS_DIVERSITY_MAX);
+  diverse = diverse.filter((a) => passesNewsHeadlineQuality(a.title, a.url)).slice(0, NEWS_DIVERSITY_MAX);
 
   return {
     strictCount: strict.length,
