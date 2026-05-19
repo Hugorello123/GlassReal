@@ -524,9 +524,6 @@ export default function DisplayPage() {
       ["NVDA", "nvda"],
       ["INTC", "intc"],
       ["TSM", "tsm"],
-      ["AVGO", "avgo"],
-      ["MU", "mu"],
-      ["SMCI", "smci"],
     ] as const;
     const pr = p && typeof p === "object" ? (p as Record<string, unknown>) : null;
     return specs.map(([sym, key]) => {
@@ -547,7 +544,7 @@ export default function DisplayPage() {
   const hotSectorsBlock = (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-cyan-500/35 bg-gradient-to-b from-cyan-950/40 via-[#0a1018] to-black/80 px-1.5 py-1.5 shadow-[0_0_36px_-12px_rgba(34,211,238,0.25),inset_0_1px_0_rgba(255,255,255,0.06)]">
       <span className="sr-only">
-        Twenty-four hour percent from the sweep when the ticker is on the price feed: NVDA, INTC, TSM, AVGO, MU, SMCI.
+        Twenty-four hour percent from the sweep when the ticker is on the price feed: NVDA, INTC, TSM.
       </span>
       <div className="shrink-0 text-[9px] font-bold uppercase tracking-[0.22em] text-cyan-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.45)]">
         Hot sectors
@@ -555,7 +552,7 @@ export default function DisplayPage() {
       <div className="mt-0.5 shrink-0 text-[9px] font-bold uppercase tracking-[0.18em] text-violet-200/95 [text-shadow:0_0_14px_rgba(167,139,250,0.35)]">
         AI / Semiconductors
       </div>
-      <div className="mt-1 grid min-h-0 min-w-0 flex-1 grid-cols-2 grid-rows-3 gap-x-1 gap-y-0.5 overflow-hidden text-center font-mono">
+      <div className="mt-1 grid min-h-0 min-w-0 flex-1 grid-cols-3 grid-rows-1 gap-x-1 overflow-hidden text-center font-mono">
         {hotSectorRows.map((row, i) => {
           const chStr = row.hasLiveCh ? fmtCh(row.chRaw) : null;
           return (

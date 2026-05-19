@@ -220,6 +220,10 @@ function logStat(cat, data) {
 /* ─── news cache (5 minutes) + NewsData rate-limit hardening ─── */
 let newsCache = { articles: [{ title: "Loading...", url: "#" }], ts: 0 };
 const NEWS_CACHE_MS = 300000; // 5 minutes
+/** Spot prices — avoid hammering Yahoo on every /api/prices + /api/gossip sweep. */
+let pricesCache = { prices: null, ts: 0 };
+let pricesFetchInFlight = null;
+const PRICES_CACHE_MS = 45_000;
 let newsQueryOffset = 0;
 let shockNewsCache = { articles: [{ title: "Loading...", url: "#" }], ts: 0 };
 let shockQueryOffset = 0;
@@ -1751,13 +1755,10 @@ const GURU_QUOTA_FILE = path.join(__dirname, "guru_quota.jsonl");
 async function fetchPrices() {
   try {
     const yahooMap = [
-      // Hot sectors (display wall) — trim list if Yahoo rate-limits
+      // Hot sectors (display wall) — phase 1: NVDA/INTC/TSM only; add AVGO/MU/SMIC after logs stable
       { key: "nvda", ticker: "NVDA" },
       { key: "intc", ticker: "INTC" },
       { key: "tsm", ticker: "TSM" },
-      { key: "avgo", ticker: "AVGO" },
-      { key: "mu", ticker: "MU" },
-      { key: "smci", ticker: "SMCI" },
       { key: "tsla", ticker: "TSLA" },
       { key: "aapl", ticker: "AAPL" },
       { key: "spx", ticker: "^GSPC" },
@@ -1801,6 +1802,29 @@ async function fetchPrices() {
     }
     return prices;
   } catch { return null; }
+}
+
+/** Cached spot row — one Yahoo round per PRICES_CACHE_MS window (shared by /api/prices, gossip, monitors). */
+async function getPricesCached() {
+  const now = Date.now();
+  if (pricesCache.prices && now - pricesCache.ts < PRICES_CACHE_MS) {
+    return pricesCache.prices;
+  }
+  if (!pricesFetchInFlight) {
+    pricesFetchInFlight = fetchPrices()
+      .then((prices) => {
+        if (prices && typeof prices === "object") {
+          pricesCache = { prices, ts: Date.now() };
+          return prices;
+        }
+        return pricesCache.prices || {};
+      })
+      .catch(() => pricesCache.prices || {})
+      .finally(() => {
+        pricesFetchInFlight = null;
+      });
+  }
+  return pricesFetchInFlight;
 }
 
 /** Defaults (fallback for assets not configured in ASSET_REGIMES). */
@@ -2174,7 +2198,7 @@ function headlineMentionsAsset(title, assetNorm) {
 async function buildLocalBriefing(assetNorm, timeframe, mode) {
   const ts = new Date().toISOString();
   const disclaimer = BRIEFING_REQUIRED_DISCLAIMER;
-  const prices = (await fetchPrices().catch(() => null)) || {};
+  const prices = (await getPricesCached().catch(() => null)) || {};
   const articles = await fetchNewsWithCache().catch(() => []);
   const gossip = gossipPayloadFromArticles(articles);
   const preds = readAllPredictionsMerged();
@@ -2728,7 +2752,7 @@ async function runPriceShockMonitor() {
   if (shockMonRunning) return;
   shockMonRunning = true;
   try {
-    const prices = await fetchPrices();
+    const prices = await getPricesCached();
     if (!prices) return;
     const g = prices.gold,
       b = prices.btc,
@@ -2818,7 +2842,7 @@ async function resolvePredictions() {
     let records = readAllPredictionsMerged();
     if (!records.length) return;
 
-    const prices = await fetchPrices();
+    const prices = await getPricesCached();
 
     const now = Date.now();
     let changed = false;
@@ -2928,7 +2952,7 @@ async function runSignalEngine() {
   const now = Date.now();
   if (now - lastSignalRun < 300000) return;
   lastSignalRun = now;
-  const prices = await fetchPrices();
+  const prices = await getPricesCached();
   const raw = generateSignals(prices);
   const throttled = throttleSignalsByAsset(raw, SIGNAL_ASSET_COOLDOWN_MS);
   if (raw.length && !throttled.length) {
@@ -2993,7 +3017,7 @@ function handleRequest(req, res) {
   }
 
   if (pathOnly === "/api/prices") {
-    fetchPrices()
+    getPricesCached()
       .then((prices) => res.writeHead(200, {"Content-Type": "application/json"}).end(JSON.stringify({ prices: prices || {} })))
       .catch(() => res.writeHead(200, {"Content-Type": "application/json"}).end(JSON.stringify({ prices: {} })));
     return;
@@ -3023,7 +3047,7 @@ function handleRequest(req, res) {
       .then(async (articles) => {
         const body = gossipPayloadFromArticles(articles);
         try {
-          const prices = await fetchPrices();
+          const prices = await getPricesCached();
           maybeFireFastGossipPredictions(articles, body.intensity, prices);
         } catch (e) {
           console.log("[FastGossip]", e && e.message);
