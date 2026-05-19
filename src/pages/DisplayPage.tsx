@@ -9,8 +9,10 @@ const LS_TRIAL_START = "sento_display_trial_started";
 const LS_PRO_ACTIVE = "sento_display_pro_active";
 const SWEEP_MS = 60_000;
 const TV_ROTATE_MS = 60_000;
-/** Wall / TV: cycle wire headlines — no mouse scroll. */
+/** Wall / TV: shock lane auto-rotate — no mouse scroll. */
 const NEWS_WIRE_ROTATE_MS = 5_000;
+/** Market headlines crawl — one full loop (35–45s target for TV readability). */
+const NEWS_WIRE_TICKER_MS = 40_000;
 
 type PredRow = {
   id?: string;
@@ -285,7 +287,6 @@ export default function DisplayPage() {
   } | null>(null);
 
   const [tvSymbol, setTvSymbol] = useState<"FOREXCOM:XAUUSD" | "BINANCE:BTCUSDT">("FOREXCOM:XAUUSD");
-  const [newsWireIdx, setNewsWireIdx] = useState(0);
   const [shockWireIdx, setShockWireIdx] = useState(0);
 
   const visualFree = useMemo(() => {
@@ -462,9 +463,14 @@ export default function DisplayPage() {
     if (!newsArticles.length || isPlaceholderNewsArticles(newsArticles)) return [];
     return newsArticles
       .slice(0, 5)
-      .map((a) => trimDisplayLine(String(a.title || "").trim(), 240))
+      .map((a) => String(a.title || "").replace(/\s+/g, " ").trim())
       .filter(Boolean);
   }, [newsArticles]);
+
+  const newsWireTickerLine = useMemo(() => {
+    if (!headlineFive.length) return "";
+    return headlineFive.join("  ·  ");
+  }, [headlineFive]);
 
   const shockHeadlineThree = useMemo(() => {
     if (!shockArticles.length || isPlaceholderShockArticles(shockArticles)) return [];
@@ -475,20 +481,8 @@ export default function DisplayPage() {
   }, [shockArticles]);
 
   useEffect(() => {
-    setNewsWireIdx(0);
-  }, [headlineFive]);
-
-  useEffect(() => {
     setShockWireIdx(0);
   }, [shockHeadlineThree]);
-
-  useEffect(() => {
-    if (headlineFive.length <= 1) return;
-    const id = window.setInterval(() => {
-      setNewsWireIdx((i) => (i + 1) % headlineFive.length);
-    }, NEWS_WIRE_ROTATE_MS);
-    return () => window.clearInterval(id);
-  }, [headlineFive]);
 
   useEffect(() => {
     if (shockHeadlineThree.length <= 1) return;
@@ -604,38 +598,41 @@ export default function DisplayPage() {
       <div className="flex min-h-0 min-w-0 flex-[2.35] flex-col overflow-hidden pb-4">
         <div className="flex shrink-0 items-baseline justify-between gap-2">
           <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300/90">News wire</div>
-          {headlineFive.length > 1 ? (
-            <div className="text-[10px] font-medium tabular-nums text-slate-500" aria-live="polite">
-              {newsWireIdx + 1} / {headlineFive.length} · auto
-            </div>
-          ) : null}
+          <span className="shrink-0 text-[10px] font-medium text-slate-500">Market headlines · live</span>
         </div>
-        <div className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col justify-start">
+        <div className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col justify-center overflow-hidden">
           {headlineFive.length === 0 ? (
-            <p className="line-clamp-2 text-sm font-medium leading-snug text-slate-500">No headlines on this sweep.</p>
+            <p className="text-sm font-medium leading-snug text-slate-500">No headlines on this sweep.</p>
           ) : (
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-start">
-              {headlineFive.length > 1 ? (
-                <div className="mb-1 flex shrink-0 justify-center gap-2" aria-hidden>
-                  {headlineFive.map((_, i) => (
-                    <span
-                      key={i}
-                      className={`h-1.5 w-1.5 rounded-full transition-colors duration-300 ${i === newsWireIdx ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]" : "bg-slate-600"}`}
-                    />
-                  ))}
+            <>
+              <style>{`
+                @keyframes display-news-wire-ticker {
+                  0% { transform: translateX(0); }
+                  100% { transform: translateX(-50%); }
+                }
+                .display-news-wire-ticker-track {
+                  animation: display-news-wire-ticker ${NEWS_WIRE_TICKER_MS}ms linear infinite;
+                  will-change: transform;
+                }
+              `}</style>
+              <div
+                className="relative min-h-[2.75rem] w-full overflow-hidden"
+                aria-live="polite"
+                aria-label="Market headlines ticker"
+              >
+                <div className="display-news-wire-ticker-track flex w-max whitespace-nowrap">
+                  <span className="inline-block shrink-0 px-6 text-sm font-semibold leading-snug text-slate-100 md:text-base">
+                    {newsWireTickerLine}
+                  </span>
+                  <span
+                    className="inline-block shrink-0 px-6 text-sm font-semibold leading-snug text-slate-100 md:text-base"
+                    aria-hidden
+                  >
+                    {newsWireTickerLine}
+                  </span>
                 </div>
-              ) : null}
-              <div key={newsWireIdx} className="min-w-0 shrink-0">
-                <div className="font-mono text-[10px] font-bold text-emerald-400/90">{newsWireIdx + 1}.</div>
-                <p
-                  className="mt-1 line-clamp-2 min-h-0 max-w-full break-words text-sm font-semibold leading-snug text-slate-100 md:text-[0.95rem]"
-                  aria-live="polite"
-                  title={headlineFive[newsWireIdx]}
-                >
-                  {headlineFive[newsWireIdx]}
-                </p>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
