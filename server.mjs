@@ -467,6 +467,147 @@ const NEWS_DIVERSITY_MIN = 6;
 const NEWS_MAX_PER_THEME = 2;
 const NEWS_MAX_PER_DOMAIN = 2;
 
+/** Hard-reject patterns: newsletters, guides, consumer gadget fluff without market angle. */
+const NEWS_REJECT_NEWSLETTER_NEEDLES = [
+  "newsletter",
+  "daily pulse",
+  "daily ai",
+  "roundup",
+  "digest",
+  "how to",
+  " guide",
+  " tips",
+  "what you need to know",
+  "everything you need",
+];
+
+const NEWS_GADGET_NEEDLES = [
+  "watchos",
+  "tvos",
+  "homepod",
+  "watch face",
+  "payout eligibility",
+  "iphone models qualify",
+  "siri payout",
+  "health feature",
+  "software update",
+  "models qualify",
+];
+
+const NEWS_MARKET_IMPACT_NEEDLES = [
+  "stock",
+  "stocks",
+  "shares",
+  "etf",
+  "ipo",
+  "earnings",
+  "revenue",
+  "market",
+  "markets",
+  "falls",
+  "rises",
+  "jumps",
+  "slips",
+  "surges",
+  "plunges",
+  "soars",
+  "tumbles",
+  "oil",
+  "gold",
+  "dollar",
+  "yields",
+  "rates",
+  "fed",
+  "cpi",
+  "crypto",
+  "bitcoin",
+  "ethereum",
+  "nvidia",
+  "tesla",
+  "microsoft",
+  "openai",
+  "apple",
+  "china",
+  "taiwan",
+  "hormuz",
+  "tariff",
+  "tariffs",
+  "trade",
+  "sanctions",
+  "wall street",
+  "nasdaq",
+  "opec",
+  "inflation",
+  "semiconductor",
+];
+
+function hasMarketImpactSignal(title) {
+  const hay = normalizeHeadlineKey(title);
+  if (!hay) return false;
+  for (const n of NEWS_MARKET_IMPACT_NEEDLES) {
+    if (n.length <= 4) {
+      if (headlineHasToken(hay, n)) return true;
+    } else if (hay.includes(n)) return true;
+  }
+  return false;
+}
+
+function isHardRejectedNewsHeadline(title) {
+  const hay = normalizeHeadlineKey(title);
+  if (!hay) return true;
+  for (const n of NEWS_REJECT_NEWSLETTER_NEEDLES) {
+    if (hay.includes(n)) return true;
+  }
+  return false;
+}
+
+function isConsumerGadgetWithoutMarketImpact(title) {
+  const hay = normalizeHeadlineKey(title);
+  let gadgetHit = false;
+  for (const g of NEWS_GADGET_NEEDLES) {
+    if (hay.includes(g)) {
+      gadgetHit = true;
+      break;
+    }
+  }
+  if (!gadgetHit && hay.includes("apple watch") && (hay.includes("update") || hay.includes("feature"))) {
+    gadgetHit = true;
+  }
+  if (!gadgetHit && hay.includes("apple") && hay.includes("update") && !hay.includes("stock") && !hay.includes("shares")) {
+    if (hay.includes("watchos") || hay.includes("watch") || hay.includes("ios")) gadgetHit = true;
+  }
+  if (!gadgetHit) return false;
+  return !hasMarketImpactSignal(title);
+}
+
+/** Lightweight quality gate for /api/news market headlines. */
+function passesNewsHeadlineQuality(title) {
+  if (isHardRejectedNewsHeadline(title)) return false;
+  if (isConsumerGadgetWithoutMarketImpact(title)) return false;
+  return hasMarketImpactSignal(title) || isMarketRelevantHeadline(title);
+}
+
+function scoreNewsHeadlineQuality(title) {
+  let score = 0;
+  if (!passesNewsHeadlineQuality(title)) return -99;
+  if (hasMarketImpactSignal(title)) score += 4;
+  if (isMarketRelevantHeadline(title)) score += 1;
+  const hay = normalizeHeadlineKey(title);
+  for (const w of ["surges", "jumps", "falls", "slips", "rises", "plunges", "soars", "tumbles", "warns", "hits"]) {
+    if (hay.includes(w)) {
+      score += 1;
+      break;
+    }
+  }
+  return score;
+}
+
+function filterPoolByNewsQuality(pool) {
+  return pool
+    .filter((a) => a?.title && passesNewsHeadlineQuality(a.title))
+    .sort((a, b) => scoreNewsHeadlineQuality(b.title) - scoreNewsHeadlineQuality(a.title));
+}
+
 function dedupeArticlesByTitle(rows) {
   const pickedTitles = [];
   const out = [];
@@ -564,15 +705,18 @@ function isLooseMarketHeadline(title) {
 }
 
 function buildDiverseMarketNewsArticles(mergedRows) {
-  const strict = mergedRows.filter((a) => isMarketRelevantHeadline(a.title));
+  const qualityMerged = filterPoolByNewsQuality(mergedRows);
+  const strict = qualityMerged.filter((a) => isMarketRelevantHeadline(a.title));
   let diverse = pickDiverseMarketHeadlines(strict, { max: NEWS_DIVERSITY_MAX });
+  diverse = diverse.filter((a) => passesNewsHeadlineQuality(a.title));
   const usedKeys = new Set(diverse.map((a) => normalizeHeadlineKey(a.title)));
 
   if (diverse.length < NEWS_DIVERSITY_MIN) {
-    const fallbackPool = mergedRows.filter((a) => {
+    const fallbackPool = qualityMerged.filter((a) => {
       const k = normalizeHeadlineKey(a.title);
       if (!k || usedKeys.has(k)) return false;
       if (isNearDuplicateHeadline(a.title, diverse.map((x) => x.title))) return false;
+      if (!passesNewsHeadlineQuality(a.title)) return false;
       return isLooseMarketHeadline(a.title) || isMarketRelevantHeadline(a.title);
     });
     const extra = pickDiverseMarketHeadlines(fallbackPool, {
@@ -581,13 +725,16 @@ function buildDiverseMarketNewsArticles(mergedRows) {
       maxPerDomain: NEWS_MAX_PER_DOMAIN,
       alreadyPicked: diverse,
     });
-    diverse = diverse.concat(extra);
+    diverse = diverse.concat(extra.filter((a) => passesNewsHeadlineQuality(a.title)));
+    for (const a of diverse) usedKeys.add(normalizeHeadlineKey(a.title));
   }
 
   if (diverse.length < NEWS_DIVERSITY_MIN) {
-    const anyLeft = mergedRows.filter((a) => {
+    const anyLeft = qualityMerged.filter((a) => {
       const k = normalizeHeadlineKey(a.title);
-      return k && !usedKeys.has(k) && !isNearDuplicateHeadline(a.title, diverse.map((x) => x.title));
+      if (!k || usedKeys.has(k)) return false;
+      if (isNearDuplicateHeadline(a.title, diverse.map((x) => x.title))) return false;
+      return passesNewsHeadlineQuality(a.title);
     });
     for (const a of anyLeft) {
       if (diverse.length >= NEWS_DIVERSITY_MIN) break;
@@ -598,11 +745,18 @@ function buildDiverseMarketNewsArticles(mergedRows) {
     }
   }
 
-  return { strictCount: strict.length, diverse, themeHistogram: diverse.reduce((acc, a) => {
-    const t = classifyNewsTheme(a.title);
-    acc[t] = (acc[t] || 0) + 1;
-    return acc;
-  }, {}) };
+  diverse = diverse.filter((a) => passesNewsHeadlineQuality(a.title)).slice(0, NEWS_DIVERSITY_MAX);
+
+  return {
+    strictCount: strict.length,
+    diverse,
+    qualityCount: diverse.length,
+    themeHistogram: diverse.reduce((acc, a) => {
+      const t = classifyNewsTheme(a.title);
+      acc[t] = (acc[t] || 0) + 1;
+      return acc;
+    }, {}),
+  };
 }
 
 function newsPlaceholderArticles(anyHttpOk) {
@@ -896,8 +1050,9 @@ async function fetchNewsWithCache() {
     }
     const merged = dedupeArticlesByTitle(rows).filter((a) => !isExcludedNewsUrl(a.url));
     rawMergedCount = merged.length;
-    const { strictCount, diverse, themeHistogram } = buildDiverseMarketNewsArticles(merged);
+    const { strictCount, diverse, themeHistogram, qualityCount } = buildDiverseMarketNewsArticles(merged);
     articles = diverse;
+    console.log("[News] quality final:", qualityCount, "articles");
     console.log(
       "[News] Fresh fetch:",
       rawMergedCount,
