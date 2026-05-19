@@ -526,6 +526,51 @@ const NEWS_REJECT_LISTICLE_NEEDLES = [
   "streaming stocks",
   "fitness stocks",
   "construction stocks",
+  "could be tomorrow s big winners",
+  "tomorrow s big winners",
+  "big winners",
+  "keep rising",
+  "soaring asx",
+  "asx mid cap stocks",
+  "asx mid cap",
+  "materials stocks keep rising",
+  "stocks that could",
+  "worth buying now",
+  "under the radar stock will outperform",
+  "under the radar stock",
+  "will outperform",
+  "can these soaring",
+  "stocks keep rising",
+];
+
+/** Celebrity/lifestyle context when "Apple" is a person, not AAPL. */
+const NEWS_APPLE_LIFESTYLE_NEEDLES = [
+  "gwyneth",
+  "paltrow",
+  "daughter",
+  "movie",
+  "graduation",
+  "watch face",
+  "iphone models qualify",
+  "payout",
+  "celebrity",
+  "actor",
+  "actress",
+  "career plans",
+  "suspected career",
+];
+
+/** Tesla vehicle listing / auction, not TSLA market news. */
+const NEWS_TESLA_VEHICLE_NEEDLES = [
+  "roadster",
+  "at no reserve",
+  "no reserve",
+  "auction",
+  "listing",
+  "used car",
+  "vehicle sale",
+  "bring a trailer",
+  "bringatrailer",
 ];
 
 const NEWS_REJECT_DOMAINS = new Set([
@@ -535,6 +580,9 @@ const NEWS_REJECT_DOMAINS = new Set([
   "thelincolnianonline.com",
   "zolmax.com",
   "insidermonkey.com",
+  "hellomagazine.com",
+  "bringatrailer.com",
+  "fool.com.au",
 ]);
 
 const NEWS_MARKET_IMPACT_NEEDLES = [
@@ -612,6 +660,27 @@ function isRejectedListicleOrContentFarmHeadline(title) {
   }
   if (/\bto watch\b/.test(hay) && hay.includes("stock")) return true;
   if (/\bto consider\b/.test(hay) && hay.includes("stock")) return true;
+  if (/\bkeep rising\b/.test(hay) && hay.includes("stock")) return true;
+  if (/\bbig winners\b/.test(hay)) return true;
+  if (hay.includes("asx") && hay.includes("stock") && (hay.includes("soaring") || hay.includes("could"))) return true;
+  return false;
+}
+
+function isCelebrityAppleFalsePositive(title) {
+  const hay = normalizeHeadlineKey(title);
+  if (!headlineHasToken(hay, "apple")) return false;
+  for (const n of NEWS_APPLE_LIFESTYLE_NEEDLES) {
+    if (hay.includes(n)) return true;
+  }
+  return false;
+}
+
+function isTeslaVehicleAuctionFalsePositive(title) {
+  const hay = normalizeHeadlineKey(title);
+  if (!headlineHasToken(hay, "tesla")) return false;
+  for (const n of NEWS_TESLA_VEHICLE_NEEDLES) {
+    if (hay.includes(n)) return true;
+  }
   return false;
 }
 
@@ -644,6 +713,8 @@ function passesNewsHeadlineQuality(title, url) {
   if (isRejectedNewsDomain(url)) return false;
   if (isHardRejectedNewsHeadline(title)) return false;
   if (isRejectedListicleOrContentFarmHeadline(title)) return false;
+  if (isCelebrityAppleFalsePositive(title)) return false;
+  if (isTeslaVehicleAuctionFalsePositive(title)) return false;
   if (isConsumerGadgetWithoutMarketImpact(title)) return false;
   return hasMarketImpactSignal(title) || isMarketRelevantHeadline(title);
 }
