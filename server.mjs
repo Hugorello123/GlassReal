@@ -463,7 +463,6 @@ function classifyNewsTheme(title) {
 }
 
 const NEWS_DIVERSITY_MAX = 12;
-const NEWS_DIVERSITY_MIN = 6;
 const NEWS_MAX_PER_THEME = 2;
 const NEWS_MAX_PER_DOMAIN = 2;
 
@@ -541,6 +540,25 @@ const NEWS_REJECT_LISTICLE_NEEDLES = [
   "will outperform",
   "can these soaring",
   "stocks keep rising",
+  "ai models weigh in",
+  "new crypto to watch",
+  "crypto to watch",
+  "gains traction",
+  "search for a breakout",
+  "1000 invested",
+  "would be worth this much",
+  "monthly cash dividend",
+  "declares dividend",
+  "preferred stock",
+  "earnings snapshot",
+  "otcmkts",
+];
+
+/** Non-market fluff (sports, promo listicles). */
+const NEWS_REJECT_FILLER_NEEDLES = [
+  "volleyball",
+  "olympics",
+  "olympic",
 ];
 
 /** Celebrity/lifestyle context when "Apple" is a person, not AAPL. */
@@ -583,7 +601,13 @@ const NEWS_REJECT_DOMAINS = new Set([
   "hellomagazine.com",
   "bringatrailer.com",
   "fool.com.au",
+  "247wallst.com",
+  "techbullion.com",
+  "baseballnewssource.com",
 ]);
+
+/** Reject by URL path fragment (hostname alone is not enough). */
+const NEWS_REJECT_URL_SUBSTRINGS = ["cbc.ca/sports", "benzinga.com/pressreleases"];
 
 const NEWS_MARKET_IMPACT_NEEDLES = [
   "stock",
@@ -658,7 +682,11 @@ function isRejectedListicleOrContentFarmHeadline(title) {
   for (const n of NEWS_REJECT_LISTICLE_NEEDLES) {
     if (hay.includes(n)) return true;
   }
-  if (/\bto watch\b/.test(hay) && hay.includes("stock")) return true;
+  for (const n of NEWS_REJECT_FILLER_NEEDLES) {
+    if (hay.includes(n)) return true;
+  }
+  if (headlineHasToken(hay, "sports")) return true;
+  if (/\bto watch\b/.test(hay) && (hay.includes("stock") || hay.includes("crypto"))) return true;
   if (/\bto consider\b/.test(hay) && hay.includes("stock")) return true;
   if (/\bkeep rising\b/.test(hay) && hay.includes("stock")) return true;
   if (/\bbig winners\b/.test(hay)) return true;
@@ -685,8 +713,13 @@ function isTeslaVehicleAuctionFalsePositive(title) {
 }
 
 function isRejectedNewsDomain(url) {
+  const u = String(url || "").toLowerCase();
   const dom = newsArticleDomain(url);
-  return NEWS_REJECT_DOMAINS.has(dom);
+  if (NEWS_REJECT_DOMAINS.has(dom)) return true;
+  for (const sub of NEWS_REJECT_URL_SUBSTRINGS) {
+    if (u.includes(sub)) return true;
+  }
+  return false;
 }
 
 function isConsumerGadgetWithoutMarketImpact(title) {
@@ -819,68 +852,13 @@ function pickDiverseMarketHeadlines(pool, opts = {}) {
   return selected;
 }
 
-/** Looser than isMarketRelevantHeadline — still market-ish for fallback fill. */
-function isLooseMarketHeadline(title) {
-  const hay = normalizeHeadlineKey(title);
-  if (!hay || hay.length < 18) return false;
-  for (const w of MARKET_BLOCK_WORDS) {
-    if (headlineHasToken(hay, w)) return false;
-  }
-  if (MARKET_BLOCK_GAME_RE.test(hay)) return false;
-  for (const w of MARKET_ALLOW_WORDS) {
-    if (headlineHasToken(hay, w)) return true;
-  }
-  for (const ph of MARKET_ALLOW_PHRASES) {
-    if (headlineHasPhrase(hay, ph)) return true;
-  }
-  return false;
-}
-
 function buildDiverseMarketNewsArticles(mergedRows) {
   const qualityMerged = filterPoolByNewsQuality(mergedRows);
-  const strict = qualityMerged.filter((a) => isMarketRelevantHeadline(a.title));
-  let diverse = pickDiverseMarketHeadlines(strict, { max: NEWS_DIVERSITY_MAX });
-  diverse = diverse.filter((a) => passesNewsHeadlineQuality(a.title, a.url));
-  const usedKeys = new Set(diverse.map((a) => normalizeHeadlineKey(a.title)));
-
-  if (diverse.length < NEWS_DIVERSITY_MIN) {
-    const fallbackPool = qualityMerged.filter((a) => {
-      const k = normalizeHeadlineKey(a.title);
-      if (!k || usedKeys.has(k)) return false;
-      if (isNearDuplicateHeadline(a.title, diverse.map((x) => x.title))) return false;
-      if (!passesNewsHeadlineQuality(a.title, a.url)) return false;
-      return isLooseMarketHeadline(a.title) || isMarketRelevantHeadline(a.title);
-    });
-    const extra = pickDiverseMarketHeadlines(fallbackPool, {
-      max: NEWS_DIVERSITY_MAX - diverse.length,
-      maxPerTheme: NEWS_MAX_PER_THEME,
-      maxPerDomain: NEWS_MAX_PER_DOMAIN,
-      alreadyPicked: diverse,
-    });
-    diverse = diverse.concat(extra.filter((a) => passesNewsHeadlineQuality(a.title, a.url)));
-    for (const a of diverse) usedKeys.add(normalizeHeadlineKey(a.title));
-  }
-
-  if (diverse.length < NEWS_DIVERSITY_MIN) {
-    const anyLeft = qualityMerged.filter((a) => {
-      const k = normalizeHeadlineKey(a.title);
-      if (!k || usedKeys.has(k)) return false;
-      if (isNearDuplicateHeadline(a.title, diverse.map((x) => x.title))) return false;
-      return passesNewsHeadlineQuality(a.title, a.url);
-    });
-    for (const a of anyLeft) {
-      if (diverse.length >= NEWS_DIVERSITY_MIN) break;
-      const k = normalizeHeadlineKey(a.title);
-      if (usedKeys.has(k)) continue;
-      diverse.push(a);
-      usedKeys.add(k);
-    }
-  }
-
+  let diverse = pickDiverseMarketHeadlines(qualityMerged, { max: NEWS_DIVERSITY_MAX });
   diverse = diverse.filter((a) => passesNewsHeadlineQuality(a.title, a.url)).slice(0, NEWS_DIVERSITY_MAX);
 
   return {
-    strictCount: strict.length,
+    strictCount: qualityMerged.filter((a) => isMarketRelevantHeadline(a.title)).length,
     diverse,
     qualityCount: diverse.length,
     themeHistogram: diverse.reduce((acc, a) => {
@@ -1184,7 +1162,7 @@ async function fetchNewsWithCache() {
     rawMergedCount = merged.length;
     const { strictCount, diverse, themeHistogram, qualityCount } = buildDiverseMarketNewsArticles(merged);
     articles = diverse;
-    console.log("[News] quality final:", qualityCount, "articles");
+    console.log("[News] quality final:", qualityCount, "clean articles, no junk padding");
     console.log(
       "[News] Fresh fetch:",
       rawMergedCount,
