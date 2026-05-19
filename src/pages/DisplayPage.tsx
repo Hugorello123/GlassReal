@@ -10,7 +10,7 @@ const LS_PRO_ACTIVE = "sento_display_pro_active";
 const SWEEP_MS = 60_000;
 const TV_ROTATE_MS = 60_000;
 /** Wall / TV: cycle wire headlines — no mouse scroll. */
-const NEWS_WIRE_ROTATE_MS = 12_000;
+const NEWS_WIRE_ROTATE_MS = 5_000;
 
 type PredRow = {
   id?: string;
@@ -458,10 +458,10 @@ export default function DisplayPage() {
     { key: "eth", label: "ETH", sub: "USD", raw: p?.eth, rawCh: p?.ethCh },
   ] as const;
 
-  const headlineThree = useMemo(() => {
+  const headlineFive = useMemo(() => {
     if (!newsArticles.length || isPlaceholderNewsArticles(newsArticles)) return [];
     return newsArticles
-      .slice(0, 3)
+      .slice(0, 5)
       .map((a) => trimDisplayLine(String(a.title || "").trim(), 240))
       .filter(Boolean);
   }, [newsArticles]);
@@ -476,19 +476,19 @@ export default function DisplayPage() {
 
   useEffect(() => {
     setNewsWireIdx(0);
-  }, [headlineThree]);
+  }, [headlineFive]);
 
   useEffect(() => {
     setShockWireIdx(0);
   }, [shockHeadlineThree]);
 
   useEffect(() => {
-    if (headlineThree.length <= 1) return;
+    if (headlineFive.length <= 1) return;
     const id = window.setInterval(() => {
-      setNewsWireIdx((i) => (i + 1) % headlineThree.length);
+      setNewsWireIdx((i) => (i + 1) % headlineFive.length);
     }, NEWS_WIRE_ROTATE_MS);
     return () => window.clearInterval(id);
-  }, [headlineThree]);
+  }, [headlineFive]);
 
   useEffect(() => {
     if (shockHeadlineThree.length <= 1) return;
@@ -604,20 +604,20 @@ export default function DisplayPage() {
       <div className="flex min-h-0 min-w-0 flex-[2.35] flex-col overflow-hidden pb-4">
         <div className="flex shrink-0 items-baseline justify-between gap-2">
           <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300/90">News wire</div>
-          {headlineThree.length > 1 ? (
+          {headlineFive.length > 1 ? (
             <div className="text-[10px] font-medium tabular-nums text-slate-500" aria-live="polite">
-              {newsWireIdx + 1} / {headlineThree.length} · auto
+              {newsWireIdx + 1} / {headlineFive.length} · auto
             </div>
           ) : null}
         </div>
         <div className="mt-2 flex min-h-0 min-w-0 flex-1 flex-col justify-start">
-          {headlineThree.length === 0 ? (
+          {headlineFive.length === 0 ? (
             <p className="line-clamp-2 text-sm font-medium leading-snug text-slate-500">No headlines on this sweep.</p>
           ) : (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-start">
-              {headlineThree.length > 1 ? (
+              {headlineFive.length > 1 ? (
                 <div className="mb-1 flex shrink-0 justify-center gap-2" aria-hidden>
-                  {headlineThree.map((_, i) => (
+                  {headlineFive.map((_, i) => (
                     <span
                       key={i}
                       className={`h-1.5 w-1.5 rounded-full transition-colors duration-300 ${i === newsWireIdx ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]" : "bg-slate-600"}`}
@@ -630,9 +630,9 @@ export default function DisplayPage() {
                 <p
                   className="mt-1 line-clamp-2 min-h-0 max-w-full break-words text-sm font-semibold leading-snug text-slate-100 md:text-[0.95rem]"
                   aria-live="polite"
-                  title={headlineThree[newsWireIdx]}
+                  title={headlineFive[newsWireIdx]}
                 >
-                  {headlineThree[newsWireIdx]}
+                  {headlineFive[newsWireIdx]}
                 </p>
               </div>
             </div>
