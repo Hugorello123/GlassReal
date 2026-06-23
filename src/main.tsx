@@ -19,11 +19,13 @@ import PredictionsPage from "./pages/PredictionsPage";
 import DisplayPage from "./pages/DisplayPage";
 import StatsPage from "./pages/StatsPage";
 import TutorPage from "./pages/TutorPage";
+import DeskPage from "./pages/DeskPage";
 import VoiceAvatar from "./components/VoiceAvatar";
 
 function RoutedVoiceAvatar() {
   const location = useLocation();
-  if (location.pathname === "/display") return null;
+  if (location.pathname === "/display" || location.pathname === "/desk" || location.pathname === "/predictions")
+    return null;
   return <VoiceAvatar />;
 }
 
@@ -49,6 +51,7 @@ createRoot(document.getElementById("root")!).render(
         {/* Stats: Live Edge Tests scorecard (reads /api/predictions) */}
         <Route path="/stats" element={<StatsPage />} />
         <Route path="/tutor" element={<TutorPage />} />
+        <Route path="/desk" element={<DeskPage />} />
         <Route path="*" element={<Landing />} />
       </Routes>
       <RoutedVoiceAvatar />
